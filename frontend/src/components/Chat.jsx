@@ -66,9 +66,16 @@ export default function Chat({ messages, onSend, currentUserId }) {
                 } max-w-[78%]`}
               >
                 {m.senderId !== currentUserId && (
-                  <span className="text-[11px] font-medium text-gray-400 ml-1 mb-0.5">
-                    {m.sender}
-                  </span>
+                  <div className="flex items-center gap-1 ml-1 mb-0.5">
+                    <span className="text-[11px] font-medium text-gray-300">
+                      {m.sender}
+                    </span>
+                    {m.isAdmin && (
+                      <span className="text-[9px] bg-amber-500/15 text-amber-300 font-semibold px-1 rounded border border-amber-500/30">
+                        👑 Admin
+                      </span>
+                    )}
+                  </div>
                 )}
                 <div
                   className={`rounded-2xl px-3.5 py-2 text-xs leading-relaxed ${

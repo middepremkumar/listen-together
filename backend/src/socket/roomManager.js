@@ -15,8 +15,10 @@ const MAX_QUEUE_SIZE = 100;
 function newRoomState(roomId) {
   return {
     roomId,
+    creatorUserId: null,
+    creatorName: '',
     hostUserId: null,
-    members: new Map(), // userId -> { userId, name, isHost, sockets: Set<socketId>, connected }
+    members: new Map(), // userId -> { userId, name, isHost, isAdmin, sockets: Set<socketId>, connected }
     queue: [],
     currentVideo: {
       videoId: null,
@@ -30,7 +32,7 @@ function newRoomState(roomId) {
     settings: {
       locked: false,
       maxMembers: MAX_ROOM_MEMBERS,
-      hasPassword: false,
+      hasPassword: true,
       password: null
     },
     chatHistory: [],
@@ -54,12 +56,23 @@ async function createRoom(options = {}) {
     state.settings.hasPassword = true;
   }
 
+  if (options.hostUserId) {
+    state.creatorUserId = options.hostUserId;
+    state.hostUserId = options.hostUserId;
+  }
+  if (options.hostName) {
+    state.creatorName = options.hostName;
+  }
+
   rooms.set(roomId, state);
 
   if (isDbConnected()) {
     try {
       await Room.create({
         roomId,
+        creatorUserId: state.creatorUserId,
+        creatorName: state.creatorName,
+        hostUserId: state.hostUserId,
         members: [],
         queue: [],
         chatHistory: [],
@@ -85,7 +98,9 @@ async function loadRoomFromDb(roomId) {
     if (!doc) return null;
 
     const state = newRoomState(doc.roomId);
-    state.hostUserId = doc.hostUserId || null;
+    state.creatorUserId = doc.creatorUserId || doc.hostUserId || null;
+    state.creatorName = doc.creatorName || '';
+    state.hostUserId = doc.hostUserId || state.creatorUserId || null;
     state.queue = doc.queue || [];
     state.currentVideo = {
       ...state.currentVideo,
@@ -127,6 +142,7 @@ function serializeMembers(room) {
     name: m.name,
     picture: m.picture || '',
     isHost: m.isHost,
+    isAdmin: m.userId === room.creatorUserId,
     connected: m.connected
   }));
 }
@@ -134,6 +150,8 @@ function serializeMembers(room) {
 function serializeRoom(room) {
   return {
     roomId: room.roomId,
+    creatorUserId: room.creatorUserId,
+    creatorName: room.creatorName,
     hostUserId: room.hostUserId,
     members: serializeMembers(room),
     queue: room.queue,
@@ -148,6 +166,13 @@ function serializeRoom(room) {
 }
 
 function addMember(room, { userId, name, picture, socketId }) {
+  // If room doesn't have a creator assigned yet, this first joining user becomes the permanent Group Admin
+  if (!room.creatorUserId) {
+    room.creatorUserId = userId;
+    room.creatorName = name;
+  }
+
+  const isCreator = room.creatorUserId === userId;
   let member = room.members.get(userId);
 
   if (member) {
@@ -161,18 +186,27 @@ function addMember(room, { userId, name, picture, socketId }) {
       name,
       picture: picture || '',
       isHost: false,
+      isAdmin: isCreator,
       sockets: new Set([socketId]),
       connected: true
     };
     room.members.set(userId, member);
   }
 
-  // Assign host if room has no host, or previous host is gone
-  const hostStillPresent = room.hostUserId && room.members.has(room.hostUserId);
-  if (!hostStillPresent) {
+  // If the returning/joining user is the permanent Group Admin, automatically restore Host privileges
+  if (isCreator) {
     room.hostUserId = userId;
     for (const m of room.members.values()) {
       m.isHost = m.userId === userId;
+    }
+  } else {
+    // If no active connected host is currently in the room, assign this member
+    const activeHost = room.hostUserId && room.members.get(room.hostUserId)?.connected;
+    if (!activeHost) {
+      room.hostUserId = userId;
+      for (const m of room.members.values()) {
+        m.isHost = m.userId === userId;
+      }
     }
   }
 
@@ -387,6 +421,8 @@ async function persistRoom(room) {
       { roomId: room.roomId },
       {
         roomId: room.roomId,
+        creatorUserId: room.creatorUserId,
+        creatorName: room.creatorName,
         hostUserId: room.hostUserId,
         members: serializeMembers(room),
         queue: room.queue,

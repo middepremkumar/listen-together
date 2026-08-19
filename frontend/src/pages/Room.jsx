@@ -44,12 +44,14 @@ export default function Room() {
   });
   const [locked, setLocked] = useState(false);
   const [hasPassword, setHasPassword] = useState(false);
+  const [creatorUserId, setCreatorUserId] = useState(location.state?.isCreator ? userId : null);
   const [hostUserId, setHostUserId] = useState(null);
   const [syncSignal, setSyncSignal] = useState(0);
   const [addingToQueue, setAddingToQueue] = useState(false);
   const [activeTab, setActiveTab] = useState('chat');
 
   const isHost = hostUserId === userId;
+  const isCreator = creatorUserId ? creatorUserId === userId : (location.state?.isCreator || isHost);
 
   // Redirect to the join form if we don't have a name yet (e.g. opened invite link directly)
   useEffect(() => {
@@ -84,13 +86,16 @@ export default function Room() {
   }, [displayName, roomId, socket, userId, userPicture, roomPassword, navigate, toast]);
 
   function applyState(state) {
-    setMembers(state.members);
-    setQueue(state.queue);
-    setChatMessages(state.chatHistory);
-    setCurrentVideo(state.currentVideo);
+    setMembers(state.members || []);
+    setQueue(state.queue || []);
+    setChatMessages(state.chatHistory || []);
+    setCurrentVideo(state.currentVideo || {});
     setLocked(!!state.settings?.locked);
     setHasPassword(!!state.settings?.hasPassword);
     setHostUserId(state.hostUserId);
+    if (state.creatorUserId) {
+      setCreatorUserId(state.creatorUserId);
+    }
     setSyncSignal((s) => s + 1);
   }
 
@@ -317,6 +322,8 @@ export default function Room() {
         roomId={roomId}
         connectionState={connectionState}
         isHost={isHost}
+        isCreator={isCreator}
+        isAdmin={isCreator}
         locked={locked}
         hasPassword={hasPassword}
         onCopyLink={handleCopyLink}

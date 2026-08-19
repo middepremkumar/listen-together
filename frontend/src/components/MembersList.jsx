@@ -31,16 +31,27 @@ export default function MembersList({ members, currentUserId, isHost, onKick, on
               </div>
 
               <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-xs font-semibold text-gray-200 truncate max-w-[130px]">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs font-semibold text-gray-200 truncate max-w-[120px]">
                     {m.name}
                   </span>
                   {m.userId === currentUserId && (
                     <span className="text-[10px] text-gray-500 font-medium">(you)</span>
                   )}
-                  {m.isHost && (
-                    <span title="Room Host" className="text-xs leading-none">
-                      👑
+                  {m.isAdmin && (
+                    <span
+                      title="Group Admin"
+                      className="text-[10px] bg-amber-500/15 text-amber-300 font-semibold px-1.5 py-0.2 rounded-full border border-amber-500/30 flex items-center gap-0.5"
+                    >
+                      👑 Admin
+                    </span>
+                  )}
+                  {m.isHost && !m.isAdmin && (
+                    <span
+                      title="Current Playback Host"
+                      className="text-[10px] bg-brand-purple/20 text-brand-purple-light font-medium px-1.5 py-0.2 rounded-full border border-brand-purple/30"
+                    >
+                      Host
                     </span>
                   )}
                 </div>

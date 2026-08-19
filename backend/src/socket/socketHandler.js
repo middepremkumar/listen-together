@@ -186,6 +186,7 @@ function initSocket(io) {
         sender: socket.data.name,
         senderId: socket.data.userId,
         senderPicture: socket.data.picture || '',
+        isAdmin: socket.data.userId === room.creatorUserId,
         text: sanitizeMessage(text),
         timestamp: Date.now()
       };
@@ -418,8 +419,13 @@ function initSocket(io) {
     socket.on('room:delete', async (_payload, ack) => {
       if (typeof ack !== 'function') ack = () => {};
       const room = roomManager.getRoom(socket.data.roomId);
-      if (!room || !requireHost(io, socket, room)) {
-        return ack({ ok: false, error: 'Only the host can permanently delete this room.' });
+      if (!room) {
+        return ack({ ok: false, error: 'Room not found.' });
+      }
+
+      const isCreator = !room.creatorUserId || room.creatorUserId === socket.data.userId;
+      if (!isCreator && !roomManager.isHost(room, socket.data.userId)) {
+        return ack({ ok: false, error: 'Only the Group Admin can permanently delete this room.' });
       }
 
       const roomId = room.roomId;

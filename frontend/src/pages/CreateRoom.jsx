@@ -12,9 +12,8 @@ import GoogleAuthButton from '../components/GoogleAuthButton.jsx';
 export default function CreateRoom() {
   const { user, isAuthenticated } = useAuth();
   const [name, setName] = useState(user?.name || getSavedName());
-  const [enablePassword, setEnablePassword] = useState(false);
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
+  const [password, setPassword] = useState(() => generateStrongPasskey());
+  const [showPassword, setShowPassword] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -26,20 +25,11 @@ export default function CreateRoom() {
     }
   }, [user]);
 
-  function handleTogglePassword(checked) {
-    setEnablePassword(checked);
-    if (checked && !password) {
-      const generated = generateStrongPasskey();
-      setPassword(generated);
-      setShowPassword(true);
-    }
-  }
-
   function handleGenerateNewPasskey() {
     const generated = generateStrongPasskey();
     setPassword(generated);
     setShowPassword(true);
-    toast.info(`Generated passkey: ${generated}`);
+    toast.info(`Generated new passkey: ${generated}`);
   }
 
   async function handleCreate(e) {
@@ -56,15 +46,15 @@ export default function CreateRoom() {
       return;
     }
 
-    const trimmedPassword = enablePassword ? password.trim() : '';
-    if (enablePassword && !trimmedPassword) {
-      setError('Please enter a room password or disable password protection.');
+    const trimmedPassword = password.trim();
+    if (!trimmedPassword) {
+      setError('Room password is required.');
       return;
     }
 
     setLoading(true);
     try {
-      const data = await createRoom(trimmed, trimmedPassword);
+      const data = await createRoom(trimmed, trimmedPassword, user?.userId);
       saveName(trimmed);
       if (trimmedPassword) {
         sessionStorage.setItem(`lt_room_pwd_${data.roomId}`, trimmedPassword);
@@ -96,7 +86,7 @@ export default function CreateRoom() {
           </Link>
           <h1 className="text-2xl font-bold text-gray-50 mb-1">Create a Room</h1>
           <p className="text-gray-400 text-sm mb-6">
-            You'll become the host and can invite friends with a link.
+            You'll become the permanent <strong className="text-amber-400">👑 Group Admin</strong> and can invite friends with your passkey.
           </p>
 
           {/* If authenticated with Google, display account info */}
@@ -131,62 +121,47 @@ export default function CreateRoom() {
             onChange={(e) => setName(e.target.value)}
           />
 
-          {/* Optional Room Password */}
-          <div className="p-4 rounded-xl border border-bg-border bg-bg-elevated/50 mb-4 transition-all">
-            <div className="flex items-center justify-between">
+          {/* Mandatory Room Password / Passkey */}
+          <div className="p-4 rounded-xl border border-bg-border bg-bg-elevated/60 mb-4">
+            <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <span className="text-sm">🔒</span>
+                <span className="text-sm">🔑</span>
                 <div>
-                  <div className="text-xs font-semibold text-gray-200">Room Password / Passkey</div>
-                  <div className="text-[11px] text-gray-400">Guests can join directly using just this passkey</div>
+                  <div className="text-xs font-semibold text-gray-200">Room Password / Passkey (Required)</div>
+                  <div className="text-[11px] text-gray-400">Guests join directly by entering this passkey</div>
                 </div>
               </div>
-              <input
-                type="checkbox"
-                id="enablePassword"
-                checked={enablePassword}
-                onChange={(e) => handleTogglePassword(e.target.checked)}
-                className="w-4 h-4 rounded border-gray-700 bg-bg text-brand-purple focus:ring-brand-purple focus:ring-offset-bg"
-              />
+              <button
+                type="button"
+                onClick={handleGenerateNewPasskey}
+                className="text-[11px] text-accent hover:underline flex items-center gap-1 font-medium bg-accent/10 px-2 py-1 rounded-md"
+              >
+                <span>🎲</span> Generate New
+              </button>
             </div>
 
-            {enablePassword && (
-              <div className="mt-3 pt-3 border-t border-bg-border/60 animate-fade-in">
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-[11px] font-medium text-gray-400" htmlFor="roomPassword">
-                    Unique Passkey
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleGenerateNewPasskey}
-                    className="text-[11px] text-accent hover:underline flex items-center gap-1 font-medium"
-                  >
-                    <span>🎲</span> Generate Strong Passkey
-                  </button>
-                </div>
-                <div className="relative">
-                  <input
-                    id="roomPassword"
-                    type={showPassword ? 'text' : 'password'}
-                    className="input-field pr-16 text-sm font-mono tracking-wide"
-                    placeholder="e.g. cosmic-beat-42"
-                    value={password}
-                    maxLength={32}
-                    onChange={(e) => setPassword(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-gray-400 hover:text-gray-200 px-1.5 py-0.5"
-                  >
-                    {showPassword ? 'Hide' : 'Show'}
-                  </button>
-                </div>
-                <p className="text-[11px] text-gray-500 mt-1.5">
-                  Share this password with friends so they can enter your room directly.
-                </p>
-              </div>
-            )}
+            <div className="relative mt-2">
+              <input
+                id="roomPassword"
+                type={showPassword ? 'text' : 'password'}
+                className="input-field pr-16 text-sm font-mono tracking-wide bg-bg-surface border-amber-500/30 focus:border-amber-400"
+                placeholder="e.g. cosmic-beat-42"
+                value={password}
+                maxLength={32}
+                required
+                onChange={(e) => setPassword(e.target.value)}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-gray-400 hover:text-gray-200 px-1.5 py-0.5"
+              >
+                {showPassword ? 'Hide' : 'Show'}
+              </button>
+            </div>
+            <p className="text-[11px] text-gray-500 mt-2">
+              Share this passkey with friends to give them access to this room.
+            </p>
           </div>
 
           {error && <p className="text-red-400 text-xs mt-2">{error}</p>}

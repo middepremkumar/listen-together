@@ -6,6 +6,7 @@ const MemberSchema = new mongoose.Schema(
     name: { type: String, required: true, maxlength: 30 },
     picture: { type: String, default: '' },
     isHost: { type: Boolean, default: false },
+    isAdmin: { type: Boolean, default: false },
     connected: { type: Boolean, default: true }
   },
   { _id: false }
@@ -42,6 +43,8 @@ const ChatMessageSchema = new mongoose.Schema(
 const RoomSchema = new mongoose.Schema(
   {
     roomId: { type: String, required: true, unique: true, index: true },
+    creatorUserId: { type: String, default: null },
+    creatorName: { type: String, default: '' },
     hostUserId: { type: String, default: null },
     members: { type: [MemberSchema], default: [] },
     queue: { type: [QueueItemSchema], default: [] },

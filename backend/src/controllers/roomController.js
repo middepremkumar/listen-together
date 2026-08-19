@@ -4,34 +4,41 @@ const { isValidRoomCode, isValidName, sanitizeName } = require('../utils/validat
 // POST /api/rooms
 async function createRoom(req, res) {
   try {
-    const { hostName, password } = req.body || {};
+    const { hostName, hostUserId, password } = req.body || {};
 
     if (!isValidName(hostName)) {
       return res.status(400).json({ error: 'A valid display name (1-24 characters) is required.' });
     }
 
     const cleanPassword = typeof password === 'string' && password.trim() ? password.trim() : null;
-    if (cleanPassword) {
-      if (cleanPassword.length < 3) {
-        return res.status(400).json({ error: 'Room password must be at least 3 characters long.' });
-      }
-      if (cleanPassword.length > 64) {
-        return res.status(400).json({ error: 'Password must not exceed 64 characters.' });
-      }
-      const isUnique = await roomManager.isPasswordUnique(cleanPassword);
-      if (!isUnique) {
-        return res.status(400).json({
-          error: 'That room password is already in use by another active room. Please choose another or generate a strong passkey.'
-        });
-      }
+    if (!cleanPassword) {
+      return res.status(400).json({ error: 'Room password is required to create a room.' });
     }
 
-    const room = await roomManager.createRoom({ password: cleanPassword });
+    if (cleanPassword.length < 3) {
+      return res.status(400).json({ error: 'Room password must be at least 3 characters long.' });
+    }
+    if (cleanPassword.length > 64) {
+      return res.status(400).json({ error: 'Password must not exceed 64 characters.' });
+    }
+    const isUnique = await roomManager.isPasswordUnique(cleanPassword);
+    if (!isUnique) {
+      return res.status(400).json({
+        error: 'That room password is already in use by another active room. Please choose another or generate a strong passkey.'
+      });
+    }
+
+    const room = await roomManager.createRoom({
+      hostUserId: hostUserId || null,
+      hostName: sanitizeName(hostName),
+      password: cleanPassword
+    });
 
     return res.status(201).json({
       roomId: room.roomId,
+      creatorUserId: room.creatorUserId,
       hostName: sanitizeName(hostName),
-      hasPassword: !!cleanPassword,
+      hasPassword: true,
       password: cleanPassword
     });
   } catch (err) {

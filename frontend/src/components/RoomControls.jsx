@@ -13,6 +13,8 @@ export default function RoomControls({
   roomId,
   connectionState,
   isHost,
+  isCreator,
+  isAdmin,
   locked,
   hasPassword,
   onCopyLink,
@@ -27,6 +29,8 @@ export default function RoomControls({
   const [showPwdText, setShowPwdText] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const status = STATUS_STYLES[connectionState] || STATUS_STYLES.connecting;
+
+  const isGroupAdmin = isCreator || isAdmin;
 
   function handleSavePassword(e) {
     e.preventDefault();
@@ -74,6 +78,11 @@ export default function RoomControls({
               <span className="hidden sm:inline text-xs text-gray-400 font-mono bg-bg-elevated px-1.5 py-0.5 rounded border border-bg-border">
                 {roomId}
               </span>
+              {isGroupAdmin && (
+                <span className="text-[10px] bg-amber-500/15 text-amber-300 font-semibold px-1.5 py-0.5 rounded-full border border-amber-500/30 hidden md:inline-flex items-center gap-0.5">
+                  👑 Group Admin
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />
@@ -103,20 +112,22 @@ export default function RoomControls({
                 title="Room password settings"
               >
                 <span>🔑</span>
-                <span className="hidden md:inline">{hasPassword ? 'Password Set' : 'Set Password'}</span>
+                <span className="hidden md:inline">{hasPassword ? 'Passkey Set' : 'Set Passkey'}</span>
               </button>
               <button onClick={onToggleLock} className="btn-secondary !px-3 !py-1.5 text-xs hidden sm:inline-block">
                 {locked ? '🔓 Unlock' : '🔒 Lock'}
               </button>
-              <button
-                onClick={() => setShowDeleteModal(true)}
-                className="btn-secondary !px-3 !py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 border-red-900/50 hidden sm:inline-block"
-                title="Permanently delete room"
-              >
-                <span>🗑️</span>
-                <span className="hidden lg:inline">Delete Room</span>
-              </button>
             </>
+          )}
+          {isGroupAdmin && (
+            <button
+              onClick={() => setShowDeleteModal(true)}
+              className="btn-secondary !px-3 !py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 border-red-900/50 hidden sm:inline-block"
+              title="Permanently delete room (Admin only)"
+            >
+              <span>🗑️</span>
+              <span className="hidden lg:inline">Delete Room</span>
+            </button>
           )}
           <button onClick={onLeave} className="btn-secondary !px-3 !py-1.5 text-xs text-gray-300 hover:text-white">
             Leave

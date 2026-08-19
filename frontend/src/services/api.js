@@ -39,13 +39,14 @@ export async function fetchAuthConfig() {
   return handleResponse(res);
 }
 
-export async function createRoom(hostName, password) {
+export async function createRoom(hostName, password, hostUserId) {
   const res = await fetch(`${API_BASE_URL}/api/rooms`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       hostName,
-      password: password || undefined
+      password: password || undefined,
+      hostUserId: hostUserId || undefined
     })
   });
   return handleResponse(res);
