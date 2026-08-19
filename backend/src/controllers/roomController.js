@@ -11,8 +11,19 @@ async function createRoom(req, res) {
     }
 
     const cleanPassword = typeof password === 'string' && password.trim() ? password.trim() : null;
-    if (cleanPassword && cleanPassword.length > 64) {
-      return res.status(400).json({ error: 'Password must not exceed 64 characters.' });
+    if (cleanPassword) {
+      if (cleanPassword.length < 3) {
+        return res.status(400).json({ error: 'Room password must be at least 3 characters long.' });
+      }
+      if (cleanPassword.length > 64) {
+        return res.status(400).json({ error: 'Password must not exceed 64 characters.' });
+      }
+      const isUnique = await roomManager.isPasswordUnique(cleanPassword);
+      if (!isUnique) {
+        return res.status(400).json({
+          error: 'That room password is already in use by another active room. Please choose another or generate a strong passkey.'
+        });
+      }
     }
 
     const room = await roomManager.createRoom({ password: cleanPassword });
@@ -20,7 +31,8 @@ async function createRoom(req, res) {
     return res.status(201).json({
       roomId: room.roomId,
       hostName: sanitizeName(hostName),
-      hasPassword: !!cleanPassword
+      hasPassword: !!cleanPassword,
+      password: cleanPassword
     });
   } catch (err) {
     console.error('[roomController.createRoom]', err);
@@ -60,6 +72,38 @@ async function getRoomInfo(req, res) {
   }
 }
 
+// POST /api/rooms/find-by-password
+async function findRoomByPassword(req, res) {
+  try {
+    const { password } = req.body || {};
+    const cleanPassword = typeof password === 'string' ? password.trim() : '';
+
+    if (!cleanPassword) {
+      return res.status(400).json({ error: 'Room password is required.' });
+    }
+
+    const room = await roomManager.getOrLoadRoomByPassword(cleanPassword);
+    if (!room) {
+      return res.status(404).json({ error: 'No room found matching that password.' });
+    }
+
+    const memberCount = Array.from(room.members.values()).filter((m) => m.connected).length;
+
+    return res.status(200).json({
+      roomId: room.roomId,
+      memberCount,
+      maxMembers: room.settings.maxMembers,
+      locked: room.settings.locked,
+      hasPassword: true,
+      full: memberCount >= room.settings.maxMembers,
+      currentVideoTitle: room.currentVideo.title || null
+    });
+  } catch (err) {
+    console.error('[roomController.findRoomByPassword]', err);
+    return res.status(500).json({ error: 'Failed to find room by password.' });
+  }
+}
+
 // POST /api/rooms/:roomId/verify-password
 async function verifyRoomPassword(req, res) {
   try {
@@ -91,5 +135,28 @@ async function verifyRoomPassword(req, res) {
   }
 }
 
-module.exports = { createRoom, getRoomInfo, verifyRoomPassword };
+// DELETE /api/rooms/:roomId
+async function deleteRoom(req, res) {
+  try {
+    const { roomId } = req.params;
+    if (!isValidRoomCode(roomId)) {
+      return res.status(400).json({ error: 'Invalid room code format.' });
+    }
+
+    await roomManager.deleteRoomCompletely(roomId);
+    return res.status(200).json({ ok: true, message: 'Room deleted successfully.' });
+  } catch (err) {
+    console.error('[roomController.deleteRoom]', err);
+    return res.status(500).json({ error: 'Failed to delete room.' });
+  }
+}
+
+module.exports = {
+  createRoom,
+  getRoomInfo,
+  findRoomByPassword,
+  verifyRoomPassword,
+  deleteRoom
+};
+
 

@@ -303,6 +303,82 @@ function verifyPassword(room, inputPassword) {
   return room.settings.password === inputPassword.trim();
 }
 
+async function isPasswordUnique(password, excludeRoomId = null) {
+  if (!password || typeof password !== 'string') return true;
+  const clean = password.trim().toLowerCase();
+
+  // Check memory cache
+  for (const [rId, room] of rooms.entries()) {
+    if (excludeRoomId && rId === excludeRoomId.toUpperCase()) continue;
+    if (room.settings.password && room.settings.password.toLowerCase() === clean) {
+      return false;
+    }
+  }
+
+  // Check MongoDB
+  if (isDbConnected()) {
+    try {
+      const query = {
+        'settings.password': { $regex: new RegExp(`^${clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+      };
+      if (excludeRoomId) {
+        query.roomId = { $ne: excludeRoomId.toUpperCase() };
+      }
+      const existing = await Room.findOne(query).select('roomId').lean();
+      if (existing) return false;
+    } catch (err) {
+      console.error('[roomManager.isPasswordUnique]', err.message);
+    }
+  }
+
+  return true;
+}
+
+async function getOrLoadRoomByPassword(password) {
+  if (!password || typeof password !== 'string') return null;
+  const clean = password.trim().toLowerCase();
+
+  // Search memory first
+  for (const room of rooms.values()) {
+    if (room.settings.password && room.settings.password.toLowerCase() === clean) {
+      return room;
+    }
+  }
+
+  // Search MongoDB
+  if (isDbConnected()) {
+    try {
+      const doc = await Room.findOne({
+        'settings.password': { $regex: new RegExp(`^${clean.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+      }).lean();
+
+      if (doc) {
+        return await loadRoomFromDb(doc.roomId);
+      }
+    } catch (err) {
+      console.error('[roomManager.getOrLoadRoomByPassword]', err.message);
+    }
+  }
+
+  return null;
+}
+
+// Host-triggered permanent deletion from both memory and MongoDB
+async function deleteRoomCompletely(roomId) {
+  if (!roomId) return;
+  const upper = roomId.toUpperCase();
+  rooms.delete(upper);
+
+  if (isDbConnected()) {
+    try {
+      await Room.deleteOne({ roomId: upper });
+      console.log(`[roomManager] Room ${upper} permanently deleted from MongoDB`);
+    } catch (err) {
+      console.error(`[roomManager] Failed to delete room ${upper}:`, err.message);
+    }
+  }
+}
+
 // Periodically persist active rooms to MongoDB (best-effort, non-blocking).
 async function persistRoom(room) {
   if (!isDbConnected()) return;
@@ -364,6 +440,8 @@ module.exports = {
   createRoom,
   getRoom,
   getOrLoadRoom,
+  getOrLoadRoomByPassword,
+  isPasswordUnique,
   loadRoomFromDb,
   serializeRoom,
   serializeMembers,
@@ -384,6 +462,7 @@ module.exports = {
   persistRoom,
   persistAllRooms,
   deleteRoom,
+  deleteRoomCompletely,
   pruneEmptyRooms,
   getActiveRoomCount,
   touch,

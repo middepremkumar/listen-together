@@ -156,6 +156,10 @@ export default function Room() {
     function onKicked() {
       setJoinState('kicked');
     }
+    function onRoomDeleted({ message }) {
+      toast.info(message || 'The room has been deleted by the host.');
+      navigate('/');
+    }
 
     socket.on('room:members', onMembers);
     socket.on('chat:message', onChatMessage);
@@ -167,6 +171,7 @@ export default function Room() {
     socket.on('room:settingsUpdated', onSettingsUpdated);
     socket.on('room:error', onRoomError);
     socket.on('room:kicked', onKicked);
+    socket.on('room:deleted', onRoomDeleted);
 
     return () => {
       socket.off('room:members', onMembers);
@@ -179,8 +184,9 @@ export default function Room() {
       socket.off('room:settingsUpdated', onSettingsUpdated);
       socket.off('room:error', onRoomError);
       socket.off('room:kicked', onKicked);
+      socket.off('room:deleted', onRoomDeleted);
     };
-  }, [socket, toast]);
+  }, [socket, toast, navigate]);
 
   // Leave on unmount / tab close
   useEffect(() => {
@@ -259,6 +265,22 @@ export default function Room() {
     socket.emit('host:transfer', { userId: targetUserId });
   }
 
+  function handleDeleteRoom() {
+    return new Promise((resolve, reject) => {
+      socket.emit('room:delete', {}, (res) => {
+        if (res?.ok) {
+          toast.info('Room permanently deleted.');
+          sessionStorage.removeItem(`lt_room_pwd_${roomId}`);
+          navigate('/');
+          resolve();
+        } else {
+          toast.error(res?.error || 'Failed to delete room.');
+          reject(new Error(res?.error || 'Failed to delete room.'));
+        }
+      });
+    });
+  }
+
   if (joinState === 'error') {
     return (
       <ErrorPage
@@ -300,6 +322,7 @@ export default function Room() {
         onCopyLink={handleCopyLink}
         onToggleLock={handleToggleLock}
         onSetPassword={handleSetPassword}
+        onDeleteRoom={handleDeleteRoom}
         onLeave={handleLeave}
       />
 

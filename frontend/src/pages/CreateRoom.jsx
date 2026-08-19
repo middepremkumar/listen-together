@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { createRoom } from '../services/api.js';
 import { saveName, getSavedName } from '../utils/session.js';
+import { generateStrongPasskey } from '../utils/passkeyGenerator.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import Navbar from '../components/Navbar.jsx';
@@ -24,6 +25,22 @@ export default function CreateRoom() {
       setName(user.name);
     }
   }, [user]);
+
+  function handleTogglePassword(checked) {
+    setEnablePassword(checked);
+    if (checked && !password) {
+      const generated = generateStrongPasskey();
+      setPassword(generated);
+      setShowPassword(true);
+    }
+  }
+
+  function handleGenerateNewPasskey() {
+    const generated = generateStrongPasskey();
+    setPassword(generated);
+    setShowPassword(true);
+    toast.info(`Generated passkey: ${generated}`);
+  }
 
   async function handleCreate(e) {
     e.preventDefault();
@@ -120,30 +137,39 @@ export default function CreateRoom() {
               <div className="flex items-center gap-2">
                 <span className="text-sm">🔒</span>
                 <div>
-                  <div className="text-xs font-semibold text-gray-200">Password Protection</div>
-                  <div className="text-[11px] text-gray-400">Require guests to enter a passcode to join</div>
+                  <div className="text-xs font-semibold text-gray-200">Room Password / Passkey</div>
+                  <div className="text-[11px] text-gray-400">Guests can join directly using just this passkey</div>
                 </div>
               </div>
               <input
                 type="checkbox"
                 id="enablePassword"
                 checked={enablePassword}
-                onChange={(e) => setEnablePassword(e.target.checked)}
+                onChange={(e) => handleTogglePassword(e.target.checked)}
                 className="w-4 h-4 rounded border-gray-700 bg-bg text-brand-purple focus:ring-brand-purple focus:ring-offset-bg"
               />
             </div>
 
             {enablePassword && (
               <div className="mt-3 pt-3 border-t border-bg-border/60 animate-fade-in">
-                <label className="block text-[11px] font-medium text-gray-400 mb-1.5" htmlFor="roomPassword">
-                  Room Passcode / Password
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[11px] font-medium text-gray-400" htmlFor="roomPassword">
+                    Unique Passkey
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleGenerateNewPasskey}
+                    className="text-[11px] text-accent hover:underline flex items-center gap-1 font-medium"
+                  >
+                    <span>🎲</span> Generate Strong Passkey
+                  </button>
+                </div>
                 <div className="relative">
                   <input
                     id="roomPassword"
                     type={showPassword ? 'text' : 'password'}
-                    className="input-field pr-16 text-sm"
-                    placeholder="Enter room password"
+                    className="input-field pr-16 text-sm font-mono tracking-wide"
+                    placeholder="e.g. cosmic-beat-42"
                     value={password}
                     maxLength={32}
                     onChange={(e) => setPassword(e.target.value)}
@@ -156,6 +182,9 @@ export default function CreateRoom() {
                     {showPassword ? 'Hide' : 'Show'}
                   </button>
                 </div>
+                <p className="text-[11px] text-gray-500 mt-1.5">
+                  Share this password with friends so they can enter your room directly.
+                </p>
               </div>
             )}
           </div>

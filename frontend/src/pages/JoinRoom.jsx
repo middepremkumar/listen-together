@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
-import { getRoomInfo } from '../services/api.js';
+import { getRoomInfo, findRoomByPassword } from '../services/api.js';
 import { saveName, getSavedName } from '../utils/session.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -11,7 +11,7 @@ import GoogleAuthButton from '../components/GoogleAuthButton.jsx';
 export default function JoinRoom() {
   const { roomId: roomIdFromUrl } = useParams();
   const { user, isAuthenticated } = useAuth();
-  const [roomId, setRoomId] = useState(roomIdFromUrl?.toUpperCase() || '');
+  const [roomKey, setRoomKey] = useState(roomIdFromUrl || '');
   const [name, setName] = useState(user?.name || getSavedName());
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -29,36 +29,37 @@ export default function JoinRoom() {
 
   // Check if room code requires password whenever room code is valid
   useEffect(() => {
-    const code = roomId.trim().toUpperCase();
-    if (/^[A-Z0-9]{4,8}$/.test(code)) {
-      getRoomInfo(code)
+    const raw = roomKey.trim();
+    const isCode = /^[A-Za-z0-9]{4,8}$/.test(raw);
+    if (isCode && raw.length <= 8) {
+      getRoomInfo(raw.toUpperCase())
         .then((info) => {
           if (info.hasPassword) {
             setRequiresPassword(true);
-            const savedPwd = sessionStorage.getItem(`lt_room_pwd_${code}`) || '';
+            const savedPwd = sessionStorage.getItem(`lt_room_pwd_${raw.toUpperCase()}`) || '';
             if (savedPwd) setPassword(savedPwd);
           } else {
             setRequiresPassword(false);
           }
         })
         .catch(() => {
-          // ignore error until submit
+          setRequiresPassword(false);
         });
     } else {
       setRequiresPassword(false);
     }
-  }, [roomId]);
+  }, [roomKey]);
 
   async function handleJoin(e) {
     e.preventDefault();
     setError('');
 
-    const code = roomId.trim().toUpperCase();
+    const rawKey = roomKey.trim();
     const trimmedName = name.trim();
     const trimmedPassword = password.trim();
 
-    if (!/^[A-Z0-9]{4,8}$/.test(code)) {
-      setError('Enter a valid room code (letters and numbers).');
+    if (!rawKey) {
+      setError('Please enter a Room Password or Room Code.');
       return;
     }
     if (!trimmedName) {
@@ -68,43 +69,68 @@ export default function JoinRoom() {
 
     setLoading(true);
     try {
-      const info = await getRoomInfo(code);
-      if (info.full) {
-        setError('This room is full. Ask the host to make space.');
-        return;
+      let targetRoomId = null;
+      let usedPassword = trimmedPassword;
+
+      // 1. Check if rawKey is a standard room code
+      if (/^[A-Za-z0-9]{4,8}$/.test(rawKey) && rawKey.length <= 8) {
+        try {
+          const info = await getRoomInfo(rawKey.toUpperCase());
+          if (info.full) {
+            setError('This room is full.');
+            return;
+          }
+          if (info.locked) {
+            setError('This room is locked by the host.');
+            return;
+          }
+          targetRoomId = info.roomId;
+          if (info.hasPassword && !trimmedPassword) {
+            setRequiresPassword(true);
+            setError('This room requires a password. Please enter the passcode.');
+            return;
+          }
+        } catch {
+          // If room code lookup failed, try finding by password below
+        }
       }
-      if (info.locked) {
-        setError('This room is locked by the host.');
-        return;
-      }
-      if (info.hasPassword) {
-        setRequiresPassword(true);
-        if (!trimmedPassword) {
-          setError('This room requires a password. Please enter the passcode.');
+
+      // 2. If not found by room code, look up room by password / passkey directly
+      if (!targetRoomId) {
+        try {
+          const info = await findRoomByPassword(rawKey);
+          if (info.full) {
+            setError('This room is full.');
+            return;
+          }
+          if (info.locked) {
+            setError('This room is locked by the host.');
+            return;
+          }
+          targetRoomId = info.roomId;
+          usedPassword = rawKey;
+        } catch {
+          setError('No room found with that code or password. Please check and try again.');
           return;
         }
       }
 
       saveName(trimmedName);
-      if (trimmedPassword) {
-        sessionStorage.setItem(`lt_room_pwd_${code}`, trimmedPassword);
+      if (usedPassword) {
+        sessionStorage.setItem(`lt_room_pwd_${targetRoomId}`, usedPassword);
       }
 
-      navigate(`/room/${code}`, {
+      navigate(`/room/${targetRoomId}`, {
         state: {
           name: trimmedName,
           picture: user?.picture || '',
-          password: trimmedPassword,
+          password: usedPassword,
           isCreator: false
         }
       });
     } catch (err) {
-      if (err.status === 404) {
-        setError('Room not found. Double-check the code and try again.');
-      } else {
-        setError(err.message || 'Failed to join room.');
-        toast.error(err.message || 'Failed to join room.');
-      }
+      setError(err.message || 'Failed to join room.');
+      toast.error(err.message || 'Failed to join room.');
     } finally {
       setLoading(false);
     }
@@ -121,7 +147,7 @@ export default function JoinRoom() {
           </Link>
           <h1 className="text-2xl font-bold text-gray-50 mb-1">Join a Room</h1>
           <p className="text-gray-400 text-sm mb-6">
-            Enter the room code your friend shared with you.
+            Enter the room password or room code to jump in.
           </p>
 
           {/* If authenticated with Google, display account info */}
@@ -143,17 +169,17 @@ export default function JoinRoom() {
             </div>
           )}
 
-          <label className="block text-xs font-semibold text-gray-400 mb-2" htmlFor="roomId">
-            Room code
+          <label className="block text-xs font-semibold text-gray-400 mb-2" htmlFor="roomKey">
+            Room Password or Room Code
           </label>
           <input
-            id="roomId"
-            className="input-field mb-4 tracking-widest uppercase font-mono"
-            placeholder="A7K92"
-            value={roomId}
-            maxLength={8}
+            id="roomKey"
+            className="input-field mb-4 font-mono text-sm"
+            placeholder="e.g. cosmic-beat-42 or A7K92"
+            value={roomKey}
+            maxLength={32}
             autoFocus={!roomIdFromUrl}
-            onChange={(e) => setRoomId(e.target.value.toUpperCase())}
+            onChange={(e) => setRoomKey(e.target.value)}
           />
 
           <label className="block text-xs font-semibold text-gray-400 mb-2" htmlFor="name">

@@ -65,8 +65,25 @@ export async function verifyRoomPassword(roomId, password) {
   return handleResponse(res);
 }
 
+export async function findRoomByPassword(password) {
+  const res = await fetch(`${API_BASE_URL}/api/rooms/find-by-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password })
+  });
+  return handleResponse(res);
+}
+
+export async function deleteRoomApi(roomId) {
+  const res = await fetch(`${API_BASE_URL}/api/rooms/${encodeURIComponent(roomId)}`, {
+    method: 'DELETE'
+  });
+  return handleResponse(res);
+}
+
 export async function checkHealth() {
   const res = await fetch(`${API_BASE_URL}/api/health`);
   return handleResponse(res);
 }
+
 

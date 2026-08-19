@@ -77,9 +77,6 @@ function initSocket(io) {
       try {
         if (typeof ack !== 'function') ack = () => {};
 
-        if (!isValidRoomCode(roomId)) {
-          return ack({ ok: false, error: 'Invalid room code.' });
-        }
         if (!userId || typeof userId !== 'string' || userId.length > 64) {
           return ack({ ok: false, error: 'Invalid session. Please refresh and try again.' });
         }
@@ -87,9 +84,15 @@ function initSocket(io) {
           return ack({ ok: false, error: 'Please enter a display name (1-24 characters).' });
         }
 
-        const room = await roomManager.getOrLoadRoom(roomId);
+        let room = null;
+        if (roomId && isValidRoomCode(roomId)) {
+          room = await roomManager.getOrLoadRoom(roomId);
+        } else if (password && typeof password === 'string' && password.trim()) {
+          room = await roomManager.getOrLoadRoomByPassword(password.trim());
+        }
+
         if (!room) {
-          return ack({ ok: false, error: 'Room not found.' });
+          return ack({ ok: false, error: 'Room not found. Check the code or password and try again.' });
         }
 
         const cleanName = sanitizeName(name);
@@ -377,14 +380,25 @@ function initSocket(io) {
       io.to(room.roomId).emit('room:locked', { locked: room.settings.locked });
     });
 
-    socket.on('room:setPassword', ({ password } = {}, ack) => {
+    socket.on('room:setPassword', async ({ password } = {}, ack) => {
       if (typeof ack !== 'function') ack = () => {};
       const room = roomManager.getRoom(socket.data.roomId);
       if (!room || !requireHost(io, socket, room)) {
         return ack({ ok: false, error: 'Only the host can set the room password.' });
       }
 
-      const hasPassword = roomManager.setPassword(room, password);
+      const cleanPassword = typeof password === 'string' && password.trim() ? password.trim() : null;
+      if (cleanPassword) {
+        if (cleanPassword.length < 3) {
+          return ack({ ok: false, error: 'Room password must be at least 3 characters long.' });
+        }
+        const isUnique = await roomManager.isPasswordUnique(cleanPassword, room.roomId);
+        if (!isUnique) {
+          return ack({ ok: false, error: 'That password is already in use by another room.' });
+        }
+      }
+
+      const hasPassword = roomManager.setPassword(room, cleanPassword);
       io.to(room.roomId).emit('room:settingsUpdated', {
         settings: {
           locked: room.settings.locked,
@@ -399,6 +413,26 @@ function initSocket(io) {
       );
       io.to(room.roomId).emit('chat:message', msg);
       ack({ ok: true, hasPassword });
+    });
+
+    socket.on('room:delete', async (_payload, ack) => {
+      if (typeof ack !== 'function') ack = () => {};
+      const room = roomManager.getRoom(socket.data.roomId);
+      if (!room || !requireHost(io, socket, room)) {
+        return ack({ ok: false, error: 'Only the host can permanently delete this room.' });
+      }
+
+      const roomId = room.roomId;
+      io.to(roomId).emit('room:deleted', { message: 'The host has permanently deleted this room.' });
+
+      const roomSockets = await io.in(roomId).fetchSockets();
+      for (const s of roomSockets) {
+        s.leave(roomId);
+        s.data.roomId = null;
+      }
+
+      await roomManager.deleteRoomCompletely(roomId);
+      ack({ ok: true });
     });
 
     socket.on('host:transfer', ({ userId: targetId } = {}) => {

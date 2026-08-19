@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import UserMenu from './UserMenu.jsx';
+import { generateStrongPasskey } from '../utils/passkeyGenerator.js';
 
 const STATUS_STYLES = {
   connected: { dot: 'bg-green-500', label: 'Connected' },
@@ -17,11 +18,14 @@ export default function RoomControls({
   onCopyLink,
   onToggleLock,
   onSetPassword,
+  onDeleteRoom,
   onLeave
 }) {
   const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [newPassword, setNewPassword] = useState('');
   const [showPwdText, setShowPwdText] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const status = STATUS_STYLES[connectionState] || STATUS_STYLES.connecting;
 
   function handleSavePassword(e) {
@@ -33,11 +37,29 @@ export default function RoomControls({
     }
   }
 
+  function handleGeneratePasskey() {
+    const generated = generateStrongPasskey();
+    setNewPassword(generated);
+    setShowPwdText(true);
+  }
+
   function handleRemovePassword() {
     if (onSetPassword) {
       onSetPassword('');
       setShowPasswordModal(false);
       setNewPassword('');
+    }
+  }
+
+  async function handleConfirmDelete() {
+    if (onDeleteRoom) {
+      setDeleting(true);
+      try {
+        await onDeleteRoom();
+      } finally {
+        setDeleting(false);
+        setShowDeleteModal(false);
+      }
     }
   }
 
@@ -86,9 +108,17 @@ export default function RoomControls({
               <button onClick={onToggleLock} className="btn-secondary !px-3 !py-1.5 text-xs hidden sm:inline-block">
                 {locked ? '🔓 Unlock' : '🔒 Lock'}
               </button>
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="btn-secondary !px-3 !py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 border-red-900/50 hidden sm:inline-block"
+                title="Permanently delete room"
+              >
+                <span>🗑️</span>
+                <span className="hidden lg:inline">Delete Room</span>
+              </button>
             </>
           )}
-          <button onClick={onLeave} className="btn-secondary !px-3 !py-1.5 text-xs text-red-400 hover:text-red-300 border-red-900/40">
+          <button onClick={onLeave} className="btn-secondary !px-3 !py-1.5 text-xs text-gray-300 hover:text-white">
             Leave
           </button>
           <div className="pl-1 border-l border-bg-border hidden sm:block">
@@ -104,7 +134,7 @@ export default function RoomControls({
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <span className="text-lg">🔑</span>
-                <h2 className="text-base font-bold text-gray-100">Room Password Settings</h2>
+                <h2 className="text-base font-bold text-gray-100">Room Password / Passkey</h2>
               </div>
               <button
                 onClick={() => setShowPasswordModal(false)}
@@ -116,20 +146,29 @@ export default function RoomControls({
 
             <p className="text-xs text-gray-400 mb-4">
               {hasPassword
-                ? 'This room currently requires a passcode for new guests to enter. You can update or remove it.'
-                : 'Set a passcode so only people with the password can enter this room.'}
+                ? 'Guests can join directly by entering this passkey on the Join page. You can change or remove it anytime.'
+                : 'Set a unique passkey so guests can join directly using just this password.'}
             </p>
 
             <form onSubmit={handleSavePassword}>
-              <label className="block text-[11px] font-medium text-gray-300 mb-1.5" htmlFor="hostRoomPassword">
-                {hasPassword ? 'New Password (or leave blank to remove)' : 'Room Passcode / Password'}
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-[11px] font-medium text-gray-300" htmlFor="hostRoomPassword">
+                  {hasPassword ? 'New Passkey' : 'Room Passkey'}
+                </label>
+                <button
+                  type="button"
+                  onClick={handleGeneratePasskey}
+                  className="text-[11px] text-accent hover:underline flex items-center gap-1 font-medium"
+                >
+                  <span>🎲</span> Generate
+                </button>
+              </div>
               <div className="relative mb-4">
                 <input
                   id="hostRoomPassword"
                   type={showPwdText ? 'text' : 'password'}
-                  className="input-field pr-16 text-sm"
-                  placeholder="Enter passcode"
+                  className="input-field pr-16 text-sm font-mono"
+                  placeholder="e.g. cosmic-beat-42"
                   value={newPassword}
                   maxLength={32}
                   autoFocus
@@ -173,7 +212,41 @@ export default function RoomControls({
           </div>
         </div>
       )}
+
+      {/* Host Delete Room Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-fade-in">
+          <div className="card w-full max-w-sm p-6 border-red-500/30 animate-scale-in">
+            <div className="flex items-center gap-2.5 text-red-400 mb-3">
+              <span className="text-xl">⚠️</span>
+              <h2 className="text-base font-bold text-gray-100">Permanently Delete Room?</h2>
+            </div>
+            <p className="text-xs text-gray-400 mb-5 leading-relaxed">
+              This will permanently delete this room from the server and MongoDB. All chat history, queue items, and active member connections will be removed.
+            </p>
+            <div className="flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteModal(false)}
+                className="btn-secondary !py-1.5 !px-3 text-xs"
+                disabled={deleting}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deleting}
+                className="btn-primary !bg-red-600 hover:!bg-red-500 !py-1.5 !px-4 text-xs"
+              >
+                {deleting ? 'Deleting…' : 'Yes, Delete Room'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
+
 
