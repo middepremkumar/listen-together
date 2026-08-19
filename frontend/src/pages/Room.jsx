@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useSocketContext } from '../context/SocketContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
-import { getUserId, getSavedName, saveName } from '../utils/session.js';
+import { getUserId, getSavedName, saveName, saveCreatedRoom, saveJoinedRoom, removeSavedRoom } from '../utils/session.js';
 import VideoPlayer from '../components/VideoPlayer.jsx';
 import Chat from '../components/Chat.jsx';
 import Queue from '../components/Queue.jsx';
@@ -28,7 +28,7 @@ export default function Room() {
   const userId = useRef(user?.userId || getUserId()).current;
   const [displayName] = useState(location.state?.name || user?.name || getSavedName());
   const userPicture = location.state?.picture || user?.picture || '';
-  const roomPassword = location.state?.password || sessionStorage.getItem(`lt_room_pwd_${roomId}`) || '';
+  const roomPassword = location.state?.password || sessionStorage.getItem(`lt_room_pwd_${roomId}`) || localStorage.getItem(`lt_room_pwd_${roomId}`) || '';
 
   const [joinState, setJoinState] = useState('joining'); // joining | joined | error | kicked
   const [joinError, setJoinError] = useState('');
@@ -96,6 +96,14 @@ export default function Room() {
     if (state.creatorUserId) {
       setCreatorUserId(state.creatorUserId);
     }
+
+    const isAdminUser = state.creatorUserId ? state.creatorUserId === userId : (location.state?.isCreator || state.hostUserId === userId);
+    if (isAdminUser) {
+      saveCreatedRoom(roomId, roomPassword);
+    } else {
+      saveJoinedRoom(roomId, roomPassword);
+    }
+
     setSyncSignal((s) => s + 1);
   }
 
@@ -163,6 +171,7 @@ export default function Room() {
     }
     function onRoomDeleted({ message }) {
       toast.info(message || 'The room has been deleted by the host.');
+      removeSavedRoom(roomId);
       navigate('/');
     }
 
@@ -275,7 +284,7 @@ export default function Room() {
       socket.emit('room:delete', {}, (res) => {
         if (res?.ok) {
           toast.info('Room permanently deleted.');
-          sessionStorage.removeItem(`lt_room_pwd_${roomId}`);
+          removeSavedRoom(roomId);
           navigate('/');
           resolve();
         } else {
