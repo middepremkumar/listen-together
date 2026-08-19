@@ -5,6 +5,7 @@ import { saveName, getSavedName, saveJoinedRoom } from '../utils/session.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import Navbar from '../components/Navbar.jsx';
+import Footer from '../components/Footer.jsx';
 import Avatar from '../components/Avatar.jsx';
 import GoogleAuthButton from '../components/GoogleAuthButton.jsx';
 
@@ -228,6 +229,8 @@ export default function JoinRoom() {
           </button>
         </form>
       </div>
+
+      <Footer />
     </div>
   );
 }

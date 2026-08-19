@@ -11,6 +11,7 @@ import {
   removeSavedRoom
 } from '../utils/session.js';
 import Navbar from '../components/Navbar.jsx';
+import Footer from '../components/Footer.jsx';
 import Avatar from '../components/Avatar.jsx';
 import GoogleAuthButton from '../components/GoogleAuthButton.jsx';
 
@@ -450,9 +451,7 @@ export default function Home() {
         </div>
       )}
 
-      <footer className="text-center text-xs text-gray-600 pb-6">
-        Built for friends, far apart.
-      </footer>
+      <Footer />
     </div>
   );
 }
