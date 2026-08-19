@@ -467,8 +467,75 @@ function pruneEmptyRooms() {
   }
 }
 
-function getActiveRoomCount() {
-  return rooms.size;
+async function getUserRooms(userId) {
+  if (!userId || typeof userId !== 'string') {
+    return { createdRooms: [], joinedRooms: [] };
+  }
+
+  const cleanUserId = userId.trim();
+  const roomMap = new Map();
+
+  // 1. Gather from memory
+  for (const [roomId, room] of rooms.entries()) {
+    const isCreator = room.creatorUserId === cleanUserId;
+    const isMember = Array.from(room.members.values()).some((m) => m.userId === cleanUserId);
+
+    if (isCreator || isMember) {
+      roomMap.set(roomId, {
+        roomId: room.roomId,
+        creatorUserId: room.creatorUserId,
+        creatorName: room.creatorName || 'Group Admin',
+        isAdmin: isCreator,
+        hasPassword: !!room.settings.password,
+        password: isCreator ? room.settings.password : undefined,
+        memberCount: Array.from(room.members.values()).filter((m) => m.connected).length,
+        currentVideoTitle: room.currentVideo.title || null,
+        currentVideoThumbnail: room.currentVideo.thumbnail || null,
+        lastActivity: room.lastActivity
+      });
+    }
+  }
+
+  // 2. Gather from MongoDB
+  if (isDbConnected()) {
+    try {
+      const docs = await Room.find({
+        $or: [
+          { creatorUserId: cleanUserId },
+          { 'members.userId': cleanUserId }
+        ]
+      })
+        .sort({ lastActivity: -1 })
+        .limit(20)
+        .lean();
+
+      for (const doc of docs) {
+        if (!roomMap.has(doc.roomId)) {
+          const isCreator = doc.creatorUserId === cleanUserId;
+          roomMap.set(doc.roomId, {
+            roomId: doc.roomId,
+            creatorUserId: doc.creatorUserId,
+            creatorName: doc.creatorName || 'Group Admin',
+            isAdmin: isCreator,
+            hasPassword: !!(doc.settings && doc.settings.password),
+            password: isCreator ? doc.settings?.password : undefined,
+            memberCount: (doc.members || []).filter((m) => m.connected).length,
+            currentVideoTitle: doc.currentVideo?.title || null,
+            currentVideoThumbnail: doc.currentVideo?.thumbnail || null,
+            lastActivity: doc.lastActivity ? new Date(doc.lastActivity).getTime() : Date.now()
+          });
+        }
+      }
+    } catch (err) {
+      console.error('[roomManager.getUserRooms]', err.message);
+    }
+  }
+
+  const all = Array.from(roomMap.values()).sort((a, b) => b.lastActivity - a.lastActivity);
+  const createdRooms = all.filter((r) => r.isAdmin);
+  const joinedRooms = all.filter((r) => !r.isAdmin);
+
+  return { createdRooms, joinedRooms };
 }
 
 module.exports = {
@@ -478,6 +545,7 @@ module.exports = {
   getOrLoadRoom,
   getOrLoadRoomByPassword,
   isPasswordUnique,
+  getUserRooms,
   loadRoomFromDb,
   serializeRoom,
   serializeMembers,

@@ -142,6 +142,22 @@ async function verifyRoomPassword(req, res) {
   }
 }
 
+// GET /api/rooms/user-rooms
+async function getUserRooms(req, res) {
+  try {
+    const userId = req.query.userId || req.user?.userId;
+    if (!userId) {
+      return res.status(400).json({ error: 'userId is required.' });
+    }
+
+    const { createdRooms, joinedRooms } = await roomManager.getUserRooms(userId);
+    return res.status(200).json({ createdRooms, joinedRooms });
+  } catch (err) {
+    console.error('[roomController.getUserRooms]', err);
+    return res.status(500).json({ error: 'Failed to fetch user rooms.' });
+  }
+}
+
 // DELETE /api/rooms/:roomId
 async function deleteRoom(req, res) {
   try {
@@ -163,7 +179,9 @@ module.exports = {
   getRoomInfo,
   findRoomByPassword,
   verifyRoomPassword,
+  getUserRooms,
   deleteRoom
 };
+
 
 

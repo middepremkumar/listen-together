@@ -82,6 +82,11 @@ export async function deleteRoomApi(roomId) {
   return handleResponse(res);
 }
 
+export async function fetchUserRooms(userId) {
+  const res = await fetch(`${API_BASE_URL}/api/rooms/user-rooms?userId=${encodeURIComponent(userId)}`);
+  return handleResponse(res);
+}
+
 export async function checkHealth() {
   const res = await fetch(`${API_BASE_URL}/api/health`);
   return handleResponse(res);
