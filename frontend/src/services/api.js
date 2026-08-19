@@ -82,8 +82,13 @@ export async function deleteRoomApi(roomId) {
   return handleResponse(res);
 }
 
-export async function fetchUserRooms(userId) {
-  const res = await fetch(`${API_BASE_URL}/api/rooms/user-rooms?userId=${encodeURIComponent(userId)}`);
+export async function fetchUserRooms(userId, roomIds = []) {
+  const params = new URLSearchParams();
+  if (userId) params.set('userId', userId);
+  if (Array.isArray(roomIds) && roomIds.length > 0) {
+    params.set('roomIds', roomIds.join(','));
+  }
+  const res = await fetch(`${API_BASE_URL}/api/rooms/user-rooms?${params.toString()}`);
   return handleResponse(res);
 }
 

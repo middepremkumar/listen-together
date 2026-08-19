@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { createRoom } from '../services/api.js';
-import { saveName, getSavedName } from '../utils/session.js';
+import { saveName, getSavedName, getUserId, saveCreatedRoom } from '../utils/session.js';
 import { generateStrongPasskey } from '../utils/passkeyGenerator.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -54,11 +54,11 @@ export default function CreateRoom() {
 
     setLoading(true);
     try {
-      const data = await createRoom(trimmed, trimmedPassword, user?.userId);
+      const creatorId = user?.userId || getUserId();
+      const data = await createRoom(trimmed, trimmedPassword, creatorId);
       saveName(trimmed);
-      if (trimmedPassword) {
-        sessionStorage.setItem(`lt_room_pwd_${data.roomId}`, trimmedPassword);
-      }
+      saveCreatedRoom(data.roomId, trimmedPassword);
+
       navigate(`/room/${data.roomId}`, {
         state: {
           name: trimmed,

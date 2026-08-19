@@ -467,27 +467,28 @@ function pruneEmptyRooms() {
   }
 }
 
-async function getUserRooms(userId) {
-  if (!userId || typeof userId !== 'string') {
-    return { createdRooms: [], joinedRooms: [] };
-  }
-
-  const cleanUserId = userId.trim();
+async function getUserRooms(userId, clientRoomIds = []) {
+  const cleanUserId = typeof userId === 'string' ? userId.trim() : '';
   const roomMap = new Map();
+
+  const formattedRoomIds = Array.isArray(clientRoomIds)
+    ? clientRoomIds.map((id) => String(id).toUpperCase().trim()).filter(Boolean)
+    : [];
 
   // 1. Gather from memory
   for (const [roomId, room] of rooms.entries()) {
-    const isCreator = room.creatorUserId === cleanUserId;
-    const isMember = Array.from(room.members.values()).some((m) => m.userId === cleanUserId);
+    const isCreator = cleanUserId && room.creatorUserId === cleanUserId;
+    const isMember = cleanUserId && Array.from(room.members.values()).some((m) => m.userId === cleanUserId);
+    const isClientSaved = formattedRoomIds.includes(roomId);
 
-    if (isCreator || isMember) {
+    if (isCreator || isMember || isClientSaved) {
       roomMap.set(roomId, {
         roomId: room.roomId,
         creatorUserId: room.creatorUserId,
         creatorName: room.creatorName || 'Group Admin',
         isAdmin: isCreator,
         hasPassword: !!room.settings.password,
-        password: isCreator ? room.settings.password : undefined,
+        password: room.settings.password || undefined,
         memberCount: Array.from(room.members.values()).filter((m) => m.connected).length,
         currentVideoTitle: room.currentVideo.title || null,
         currentVideoThumbnail: room.currentVideo.thumbnail || null,
@@ -499,31 +500,37 @@ async function getUserRooms(userId) {
   // 2. Gather from MongoDB
   if (isDbConnected()) {
     try {
-      const docs = await Room.find({
-        $or: [
-          { creatorUserId: cleanUserId },
-          { 'members.userId': cleanUserId }
-        ]
-      })
-        .sort({ lastActivity: -1 })
-        .limit(20)
-        .lean();
+      const orConditions = [];
+      if (cleanUserId) {
+        orConditions.push({ creatorUserId: cleanUserId });
+        orConditions.push({ 'members.userId': cleanUserId });
+      }
+      if (formattedRoomIds.length > 0) {
+        orConditions.push({ roomId: { $in: formattedRoomIds } });
+      }
 
-      for (const doc of docs) {
-        if (!roomMap.has(doc.roomId)) {
-          const isCreator = doc.creatorUserId === cleanUserId;
-          roomMap.set(doc.roomId, {
-            roomId: doc.roomId,
-            creatorUserId: doc.creatorUserId,
-            creatorName: doc.creatorName || 'Group Admin',
-            isAdmin: isCreator,
-            hasPassword: !!(doc.settings && doc.settings.password),
-            password: isCreator ? doc.settings?.password : undefined,
-            memberCount: (doc.members || []).filter((m) => m.connected).length,
-            currentVideoTitle: doc.currentVideo?.title || null,
-            currentVideoThumbnail: doc.currentVideo?.thumbnail || null,
-            lastActivity: doc.lastActivity ? new Date(doc.lastActivity).getTime() : Date.now()
-          });
+      if (orConditions.length > 0) {
+        const docs = await Room.find({ $or: orConditions })
+          .sort({ lastActivity: -1 })
+          .limit(30)
+          .lean();
+
+        for (const doc of docs) {
+          if (!roomMap.has(doc.roomId)) {
+            const isCreator = cleanUserId && doc.creatorUserId === cleanUserId;
+            roomMap.set(doc.roomId, {
+              roomId: doc.roomId,
+              creatorUserId: doc.creatorUserId,
+              creatorName: doc.creatorName || 'Group Admin',
+              isAdmin: isCreator,
+              hasPassword: !!(doc.settings && doc.settings.password),
+              password: doc.settings?.password || undefined,
+              memberCount: (doc.members || []).filter((m) => m.connected).length,
+              currentVideoTitle: doc.currentVideo?.title || null,
+              currentVideoThumbnail: doc.currentVideo?.thumbnail || null,
+              lastActivity: doc.lastActivity ? new Date(doc.lastActivity).getTime() : Date.now()
+            });
+          }
         }
       }
     } catch (err) {

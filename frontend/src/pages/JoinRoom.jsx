@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import { getRoomInfo, findRoomByPassword } from '../services/api.js';
-import { saveName, getSavedName } from '../utils/session.js';
+import { saveName, getSavedName, saveJoinedRoom } from '../utils/session.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import Navbar from '../components/Navbar.jsx';
@@ -116,9 +116,7 @@ export default function JoinRoom() {
       }
 
       saveName(trimmedName);
-      if (usedPassword) {
-        sessionStorage.setItem(`lt_room_pwd_${targetRoomId}`, usedPassword);
-      }
+      saveJoinedRoom(targetRoomId, usedPassword);
 
       navigate(`/room/${targetRoomId}`, {
         state: {

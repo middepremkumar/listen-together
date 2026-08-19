@@ -3,7 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { fetchUserRooms, deleteRoomApi } from '../services/api.js';
-import { getUserId, getSavedName } from '../utils/session.js';
+import {
+  getUserId,
+  getSavedName,
+  getAllSavedRoomIds,
+  getSavedCreatedRoomIds,
+  removeSavedRoom
+} from '../utils/session.js';
 import Navbar from '../components/Navbar.jsx';
 import Avatar from '../components/Avatar.jsx';
 import GoogleAuthButton from '../components/GoogleAuthButton.jsx';
@@ -22,16 +28,43 @@ export default function Home() {
   const currentUserId = user?.userId || getUserId();
 
   async function loadRooms() {
-    if (!currentUserId) {
-      setLoadingRooms(false);
-      return;
-    }
     try {
       setLoadingRooms(true);
-      const data = await fetchUserRooms(currentUserId);
-      setCreatedRooms(data?.createdRooms || []);
-      setJoinedRooms(data?.joinedRooms || []);
-      if ((data?.createdRooms || []).length === 0 && (data?.joinedRooms || []).length > 0) {
+      const savedIds = getAllSavedRoomIds();
+      const localCreatedIds = getSavedCreatedRoomIds();
+      const data = await fetchUserRooms(currentUserId, savedIds);
+
+      // Combine server rooms + local created status
+      const serverCreated = (data?.createdRooms || []).map((r) => ({
+        ...r,
+        isAdmin: true,
+        password: r.password || localStorage.getItem(`lt_room_pwd_${r.roomId}`) || ''
+      }));
+
+      const serverJoined = (data?.joinedRooms || []).map((r) => {
+        const isLocallyCreated = localCreatedIds.includes(r.roomId);
+        const storedPwd = localStorage.getItem(`lt_room_pwd_${r.roomId}`) || r.password || '';
+        return {
+          ...r,
+          isAdmin: isLocallyCreated || r.isAdmin,
+          password: storedPwd
+        };
+      });
+
+      const allCreated = [
+        ...serverCreated,
+        ...serverJoined.filter((r) => r.isAdmin)
+      ];
+      const allJoined = serverJoined.filter((r) => !r.isAdmin);
+
+      // Deduplicate by roomId
+      const uniqueCreated = Array.from(new Map(allCreated.map((r) => [r.roomId, r])).values());
+      const uniqueJoined = Array.from(new Map(allJoined.map((r) => [r.roomId, r])).values());
+
+      setCreatedRooms(uniqueCreated);
+      setJoinedRooms(uniqueJoined);
+
+      if (uniqueCreated.length === 0 && uniqueJoined.length > 0) {
         setActiveTab('joined');
       }
     } catch {
@@ -48,7 +81,7 @@ export default function Home() {
 
   function handleRejoin(room) {
     const savedName = user?.name || getSavedName() || 'Guest';
-    const pwd = room.password || sessionStorage.getItem(`lt_room_pwd_${room.roomId}`) || '';
+    const pwd = room.password || localStorage.getItem(`lt_room_pwd_${room.roomId}`) || sessionStorage.getItem(`lt_room_pwd_${room.roomId}`) || '';
     if (pwd) {
       sessionStorage.setItem(`lt_room_pwd_${room.roomId}`, pwd);
     }
@@ -75,7 +108,7 @@ export default function Home() {
     setDeleting(true);
     try {
       await deleteRoomApi(deleteTargetRoomId);
-      sessionStorage.removeItem(`lt_room_pwd_${deleteTargetRoomId}`);
+      removeSavedRoom(deleteTargetRoomId);
       toast.info('Room permanently deleted.');
       setDeleteTargetRoomId(null);
       await loadRooms();
