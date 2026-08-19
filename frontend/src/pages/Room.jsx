@@ -28,6 +28,7 @@ export default function Room() {
   const userId = useRef(user?.userId || getUserId()).current;
   const [displayName] = useState(location.state?.name || user?.name || getSavedName());
   const userPicture = location.state?.picture || user?.picture || '';
+  const roomPassword = location.state?.password || sessionStorage.getItem(`lt_room_pwd_${roomId}`) || '';
 
   const [joinState, setJoinState] = useState('joining'); // joining | joined | error | kicked
   const [joinError, setJoinError] = useState('');
@@ -42,6 +43,7 @@ export default function Room() {
     position: 0
   });
   const [locked, setLocked] = useState(false);
+  const [hasPassword, setHasPassword] = useState(false);
   const [hostUserId, setHostUserId] = useState(null);
   const [syncSignal, setSyncSignal] = useState(0);
   const [addingToQueue, setAddingToQueue] = useState(false);
@@ -59,24 +61,35 @@ export default function Room() {
   const joinRoom = useCallback(() => {
     if (!displayName) return;
     setJoinState('joining');
-    socket.emit('room:join', { roomId, userId, name: displayName, picture: userPicture }, (res) => {
-      if (!res?.ok) {
-        setJoinState('error');
-        setJoinError(res?.error || 'Failed to join room.');
-        return;
+    socket.emit(
+      'room:join',
+      { roomId, userId, name: displayName, picture: userPicture, password: roomPassword },
+      (res) => {
+        if (!res?.ok) {
+          if (res?.requiresPassword) {
+            sessionStorage.removeItem(`lt_room_pwd_${roomId}`);
+            navigate(`/join/${roomId}`, { replace: true });
+            toast.error(res?.error || 'Password required to join this room.');
+            return;
+          }
+          setJoinState('error');
+          setJoinError(res?.error || 'Failed to join room.');
+          return;
+        }
+        saveName(displayName);
+        applyState(res.state);
+        setJoinState('joined');
       }
-      saveName(displayName);
-      applyState(res.state);
-      setJoinState('joined');
-    });
-  }, [displayName, roomId, socket, userId, userPicture]);
+    );
+  }, [displayName, roomId, socket, userId, userPicture, roomPassword, navigate, toast]);
 
   function applyState(state) {
     setMembers(state.members);
     setQueue(state.queue);
     setChatMessages(state.chatHistory);
     setCurrentVideo(state.currentVideo);
-    setLocked(state.settings.locked);
+    setLocked(!!state.settings?.locked);
+    setHasPassword(!!state.settings?.hasPassword);
     setHostUserId(state.hostUserId);
     setSyncSignal((s) => s + 1);
   }
@@ -131,6 +144,12 @@ export default function Room() {
     function onRoomLocked({ locked: newLocked }) {
       setLocked(newLocked);
     }
+    function onSettingsUpdated({ settings }) {
+      if (settings) {
+        if (typeof settings.locked === 'boolean') setLocked(settings.locked);
+        if (typeof settings.hasPassword === 'boolean') setHasPassword(settings.hasPassword);
+      }
+    }
     function onRoomError({ message }) {
       toast.error(message);
     }
@@ -145,6 +164,7 @@ export default function Room() {
     socket.on('queue:update', onQueueUpdate);
     socket.on('host:changed', onHostChanged);
     socket.on('room:locked', onRoomLocked);
+    socket.on('room:settingsUpdated', onSettingsUpdated);
     socket.on('room:error', onRoomError);
     socket.on('room:kicked', onKicked);
 
@@ -156,6 +176,7 @@ export default function Room() {
       socket.off('queue:update', onQueueUpdate);
       socket.off('host:changed', onHostChanged);
       socket.off('room:locked', onRoomLocked);
+      socket.off('room:settingsUpdated', onSettingsUpdated);
       socket.off('room:error', onRoomError);
       socket.off('room:kicked', onKicked);
     };
@@ -187,6 +208,23 @@ export default function Room() {
 
   function handleToggleLock() {
     socket.emit('room:lock', { locked: !locked });
+  }
+
+  function handleSetPassword(newPassword) {
+    socket.emit('room:setPassword', { password: newPassword }, (res) => {
+      if (res?.ok) {
+        setHasPassword(!!res.hasPassword);
+        if (newPassword) {
+          sessionStorage.setItem(`lt_room_pwd_${roomId}`, newPassword);
+          toast.success('Room password updated.');
+        } else {
+          sessionStorage.removeItem(`lt_room_pwd_${roomId}`);
+          toast.info('Room password removed.');
+        }
+      } else {
+        toast.error(res?.error || 'Failed to update password.');
+      }
+    });
   }
 
   function handleSendChat(text) {
@@ -258,8 +296,10 @@ export default function Room() {
         connectionState={connectionState}
         isHost={isHost}
         locked={locked}
+        hasPassword={hasPassword}
         onCopyLink={handleCopyLink}
         onToggleLock={handleToggleLock}
+        onSetPassword={handleSetPassword}
         onLeave={handleLeave}
       />
 

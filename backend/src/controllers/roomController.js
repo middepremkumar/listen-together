@@ -4,17 +4,23 @@ const { isValidRoomCode, isValidName, sanitizeName } = require('../utils/validat
 // POST /api/rooms
 async function createRoom(req, res) {
   try {
-    const { hostName } = req.body || {};
+    const { hostName, password } = req.body || {};
 
     if (!isValidName(hostName)) {
       return res.status(400).json({ error: 'A valid display name (1-24 characters) is required.' });
     }
 
-    const room = await roomManager.createRoom();
+    const cleanPassword = typeof password === 'string' && password.trim() ? password.trim() : null;
+    if (cleanPassword && cleanPassword.length > 64) {
+      return res.status(400).json({ error: 'Password must not exceed 64 characters.' });
+    }
+
+    const room = await roomManager.createRoom({ password: cleanPassword });
 
     return res.status(201).json({
       roomId: room.roomId,
-      hostName: sanitizeName(hostName)
+      hostName: sanitizeName(hostName),
+      hasPassword: !!cleanPassword
     });
   } catch (err) {
     console.error('[roomController.createRoom]', err);
@@ -44,6 +50,7 @@ async function getRoomInfo(req, res) {
       memberCount,
       maxMembers: room.settings.maxMembers,
       locked: room.settings.locked,
+      hasPassword: !!room.settings.password,
       full: memberCount >= room.settings.maxMembers,
       currentVideoTitle: room.currentVideo.title || null
     });
@@ -53,4 +60,36 @@ async function getRoomInfo(req, res) {
   }
 }
 
-module.exports = { createRoom, getRoomInfo };
+// POST /api/rooms/:roomId/verify-password
+async function verifyRoomPassword(req, res) {
+  try {
+    const { roomId } = req.params;
+    const { password } = req.body || {};
+
+    if (!isValidRoomCode(roomId)) {
+      return res.status(400).json({ error: 'Invalid room code format.' });
+    }
+
+    const room = await roomManager.getOrLoadRoom(roomId);
+    if (!room) {
+      return res.status(404).json({ error: 'Room not found.' });
+    }
+
+    if (!room.settings.password) {
+      return res.status(200).json({ ok: true, requiresPassword: false });
+    }
+
+    const valid = roomManager.verifyPassword(room, password);
+    if (!valid) {
+      return res.status(401).json({ ok: false, error: 'Incorrect room password.' });
+    }
+
+    return res.status(200).json({ ok: true, requiresPassword: true });
+  } catch (err) {
+    console.error('[roomController.verifyRoomPassword]', err);
+    return res.status(500).json({ error: 'Failed to verify room password.' });
+  }
+}
+
+module.exports = { createRoom, getRoomInfo, verifyRoomPassword };
+

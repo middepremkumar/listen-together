@@ -29,7 +29,9 @@ function newRoomState(roomId) {
     },
     settings: {
       locked: false,
-      maxMembers: MAX_ROOM_MEMBERS
+      maxMembers: MAX_ROOM_MEMBERS,
+      hasPassword: false,
+      password: null
     },
     chatHistory: [],
     lastActivity: Date.now(),
@@ -37,7 +39,7 @@ function newRoomState(roomId) {
   };
 }
 
-async function createRoom() {
+async function createRoom(options = {}) {
   let roomId;
   let attempts = 0;
   do {
@@ -46,11 +48,23 @@ async function createRoom() {
   } while (rooms.has(roomId) && attempts < 10);
 
   const state = newRoomState(roomId);
+  const password = typeof options.password === 'string' && options.password.trim() ? options.password.trim() : null;
+  if (password) {
+    state.settings.password = password;
+    state.settings.hasPassword = true;
+  }
+
   rooms.set(roomId, state);
 
   if (isDbConnected()) {
     try {
-      await Room.create({ roomId, members: [], queue: [], chatHistory: [] });
+      await Room.create({
+        roomId,
+        members: [],
+        queue: [],
+        chatHistory: [],
+        settings: state.settings
+      });
     } catch (err) {
       console.error('[roomManager] Failed to persist new room:', err.message);
     }
@@ -79,7 +93,12 @@ async function loadRoomFromDb(roomId) {
       isPlaying: false, // never resume auto-playing on reload
       updatedAt: Date.now()
     };
-    state.settings = { ...state.settings, ...doc.settings };
+    state.settings = {
+      ...state.settings,
+      ...doc.settings,
+      hasPassword: !!(doc.settings && doc.settings.password),
+      password: doc.settings?.password || null
+    };
     state.chatHistory = doc.chatHistory || [];
     state.lastActivity = Date.now();
 
@@ -119,7 +138,11 @@ function serializeRoom(room) {
     members: serializeMembers(room),
     queue: room.queue,
     currentVideo: room.currentVideo,
-    settings: room.settings,
+    settings: {
+      locked: !!room.settings.locked,
+      maxMembers: room.settings.maxMembers || MAX_ROOM_MEMBERS,
+      hasPassword: !!room.settings.password
+    },
     chatHistory: room.chatHistory.slice(-50)
   };
 }
@@ -265,6 +288,21 @@ function generateId() {
   return nanoid(10);
 }
 
+function setPassword(room, password) {
+  const clean = typeof password === 'string' && password.trim() ? password.trim() : null;
+  room.settings.password = clean;
+  room.settings.hasPassword = !!clean;
+  touch(room);
+  persistRoom(room);
+  return room.settings.hasPassword;
+}
+
+function verifyPassword(room, inputPassword) {
+  if (!room.settings.password) return true;
+  if (!inputPassword || typeof inputPassword !== 'string') return false;
+  return room.settings.password === inputPassword.trim();
+}
+
 // Periodically persist active rooms to MongoDB (best-effort, non-blocking).
 async function persistRoom(room) {
   if (!isDbConnected()) return;
@@ -277,7 +315,12 @@ async function persistRoom(room) {
         members: serializeMembers(room),
         queue: room.queue,
         currentVideo: room.currentVideo,
-        settings: room.settings,
+        settings: {
+          locked: !!room.settings.locked,
+          maxMembers: room.settings.maxMembers || MAX_ROOM_MEMBERS,
+          hasPassword: !!room.settings.password,
+          password: room.settings.password || null
+        },
         chatHistory: room.chatHistory.slice(-100),
         lastActivity: new Date(room.lastActivity)
       },
@@ -297,7 +340,7 @@ function deleteRoom(roomId) {
   rooms.delete(roomId);
 }
 
-// Clean up rooms with no connected members and no recent activity.
+// Clean up rooms from in-memory cache when idle, ensuring state stays permanently in MongoDB
 function pruneEmptyRooms() {
   const inactivityMs = (parseInt(process.env.ROOM_INACTIVITY_MINUTES, 10) || 180) * 60 * 1000;
   const now = Date.now();
@@ -306,6 +349,7 @@ function pruneEmptyRooms() {
     const hasConnected = Array.from(room.members.values()).some((m) => m.connected);
     const stale = now - room.lastActivity > inactivityMs;
     if (!hasConnected && stale) {
+      persistRoom(room);
       rooms.delete(roomId);
     }
   }
@@ -327,6 +371,8 @@ module.exports = {
   removeSocketFromMember,
   purgeDisconnectedMember,
   isHost,
+  setPassword,
+  verifyPassword,
   addChatMessage,
   addToQueue,
   removeFromQueue,
@@ -343,3 +389,4 @@ module.exports = {
   touch,
   MAX_ROOM_MEMBERS
 };
+

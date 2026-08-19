@@ -11,6 +11,9 @@ import GoogleAuthButton from '../components/GoogleAuthButton.jsx';
 export default function CreateRoom() {
   const { user, isAuthenticated } = useAuth();
   const [name, setName] = useState(user?.name || getSavedName());
+  const [enablePassword, setEnablePassword] = useState(false);
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const navigate = useNavigate();
@@ -36,14 +39,24 @@ export default function CreateRoom() {
       return;
     }
 
+    const trimmedPassword = enablePassword ? password.trim() : '';
+    if (enablePassword && !trimmedPassword) {
+      setError('Please enter a room password or disable password protection.');
+      return;
+    }
+
     setLoading(true);
     try {
-      const data = await createRoom(trimmed);
+      const data = await createRoom(trimmed, trimmedPassword);
       saveName(trimmed);
+      if (trimmedPassword) {
+        sessionStorage.setItem(`lt_room_pwd_${data.roomId}`, trimmedPassword);
+      }
       navigate(`/room/${data.roomId}`, {
         state: {
           name: trimmed,
           picture: user?.picture || '',
+          password: trimmedPassword,
           isCreator: true
         }
       });
@@ -93,16 +106,63 @@ export default function CreateRoom() {
           </label>
           <input
             id="name"
-            className="input-field mb-1"
+            className="input-field mb-4"
             placeholder="e.g. Prem"
             value={name}
             maxLength={24}
             autoFocus={!isAuthenticated}
             onChange={(e) => setName(e.target.value)}
           />
+
+          {/* Optional Room Password */}
+          <div className="p-4 rounded-xl border border-bg-border bg-bg-elevated/50 mb-4 transition-all">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-sm">🔒</span>
+                <div>
+                  <div className="text-xs font-semibold text-gray-200">Password Protection</div>
+                  <div className="text-[11px] text-gray-400">Require guests to enter a passcode to join</div>
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                id="enablePassword"
+                checked={enablePassword}
+                onChange={(e) => setEnablePassword(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-700 bg-bg text-brand-purple focus:ring-brand-purple focus:ring-offset-bg"
+              />
+            </div>
+
+            {enablePassword && (
+              <div className="mt-3 pt-3 border-t border-bg-border/60 animate-fade-in">
+                <label className="block text-[11px] font-medium text-gray-400 mb-1.5" htmlFor="roomPassword">
+                  Room Passcode / Password
+                </label>
+                <div className="relative">
+                  <input
+                    id="roomPassword"
+                    type={showPassword ? 'text' : 'password'}
+                    className="input-field pr-16 text-sm"
+                    placeholder="Enter room password"
+                    value={password}
+                    maxLength={32}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] text-gray-400 hover:text-gray-200 px-1.5 py-0.5"
+                  >
+                    {showPassword ? 'Hide' : 'Show'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {error && <p className="text-red-400 text-xs mt-2">{error}</p>}
 
-          <button type="submit" disabled={loading} className="btn-primary w-full mt-6">
+          <button type="submit" disabled={loading} className="btn-primary w-full mt-4">
             {loading ? 'Creating room…' : 'Create Room'}
           </button>
         </form>

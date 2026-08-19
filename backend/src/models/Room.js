@@ -56,7 +56,9 @@ const RoomSchema = new mongoose.Schema(
     },
     settings: {
       locked: { type: Boolean, default: false },
-      maxMembers: { type: Number, default: 25 }
+      maxMembers: { type: Number, default: 25 },
+      hasPassword: { type: Boolean, default: false },
+      password: { type: String, default: null }
     },
     chatHistory: { type: [ChatMessageSchema], default: [] },
     lastActivity: { type: Date, default: Date.now }

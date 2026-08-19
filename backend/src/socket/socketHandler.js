@@ -73,7 +73,7 @@ function initSocket(io) {
     socket.data.picture = null;
 
     // ---------- JOIN ROOM ----------
-    socket.on('room:join', async ({ roomId, userId, name, picture } = {}, ack) => {
+    socket.on('room:join', async ({ roomId, userId, name, picture, password } = {}, ack) => {
       try {
         if (typeof ack !== 'function') ack = () => {};
 
@@ -102,6 +102,14 @@ function initSocket(io) {
 
         if (!existingMember && connectedCount >= room.settings.maxMembers) {
           return ack({ ok: false, error: 'This room is full.' });
+        }
+
+        // Check password if set and user is not an existing connected member
+        if (!existingMember && room.settings.password) {
+          const isRoomHost = room.hostUserId === userId;
+          if (!isRoomHost && !roomManager.verifyPassword(room, password)) {
+            return ack({ ok: false, error: 'Incorrect room password.', requiresPassword: true });
+          }
         }
 
         // Prevent duplicate display names among currently connected members
@@ -367,6 +375,30 @@ function initSocket(io) {
       room.settings.locked = !!locked;
       roomManager.touch(room);
       io.to(room.roomId).emit('room:locked', { locked: room.settings.locked });
+    });
+
+    socket.on('room:setPassword', ({ password } = {}, ack) => {
+      if (typeof ack !== 'function') ack = () => {};
+      const room = roomManager.getRoom(socket.data.roomId);
+      if (!room || !requireHost(io, socket, room)) {
+        return ack({ ok: false, error: 'Only the host can set the room password.' });
+      }
+
+      const hasPassword = roomManager.setPassword(room, password);
+      io.to(room.roomId).emit('room:settingsUpdated', {
+        settings: {
+          locked: room.settings.locked,
+          maxMembers: room.settings.maxMembers,
+          hasPassword
+        }
+      });
+
+      const msg = systemMessage(
+        room,
+        hasPassword ? `${socket.data.name} set a room password` : `${socket.data.name} removed the room password`
+      );
+      io.to(room.roomId).emit('chat:message', msg);
+      ack({ ok: true, hasPassword });
     });
 
     socket.on('host:transfer', ({ userId: targetId } = {}) => {

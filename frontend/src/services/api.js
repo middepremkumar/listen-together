@@ -39,11 +39,14 @@ export async function fetchAuthConfig() {
   return handleResponse(res);
 }
 
-export async function createRoom(hostName) {
+export async function createRoom(hostName, password) {
   const res = await fetch(`${API_BASE_URL}/api/rooms`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ hostName })
+    body: JSON.stringify({
+      hostName,
+      password: password || undefined
+    })
   });
   return handleResponse(res);
 }
@@ -53,7 +56,17 @@ export async function getRoomInfo(roomId) {
   return handleResponse(res);
 }
 
+export async function verifyRoomPassword(roomId, password) {
+  const res = await fetch(`${API_BASE_URL}/api/rooms/${encodeURIComponent(roomId)}/verify-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password })
+  });
+  return handleResponse(res);
+}
+
 export async function checkHealth() {
   const res = await fetch(`${API_BASE_URL}/api/health`);
   return handleResponse(res);
 }
+
