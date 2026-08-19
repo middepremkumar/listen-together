@@ -4,7 +4,7 @@ const User = require('../models/User');
 const { isDbConnected } = require('../config/db');
 const { JWT_SECRET } = require('../middleware/authMiddleware');
 
-const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
+const GOOGLE_CLIENT_ID = (process.env.GOOGLE_CLIENT_ID || '').trim();
 const client = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 // In-memory fallback cache for users when DB is disconnected
@@ -20,9 +20,10 @@ async function verifyGoogleToken(credential) {
 
   // If GOOGLE_CLIENT_ID is configured, verify with official Google library
   if (GOOGLE_CLIENT_ID) {
+    const audiences = GOOGLE_CLIENT_ID.split(',').map((s) => s.trim()).filter(Boolean);
     const ticket = await client.verifyIdToken({
       idToken: credential,
-      audience: GOOGLE_CLIENT_ID
+      audience: audiences.length === 1 ? audiences[0] : audiences
     });
     return ticket.getPayload();
   }
