@@ -146,10 +146,11 @@ async function verifyRoomPassword(req, res) {
 async function getUserRooms(req, res) {
   try {
     const userId = req.query.userId || req.user?.userId || '';
-    const rawRoomIds = req.query.roomIds ? String(req.query.roomIds).split(',') : [];
+    const createdIds = req.query.createdIds ? String(req.query.createdIds).split(',') : [];
+    const joinedIds = req.query.joinedIds ? String(req.query.joinedIds).split(',') : [];
 
-    const { createdRooms, joinedRooms } = await roomManager.getUserRooms(userId, rawRoomIds);
-    return res.status(200).json({ createdRooms, joinedRooms });
+    const { allRooms, createdRooms, joinedRooms } = await roomManager.getUserRooms(userId, createdIds, joinedIds);
+    return res.status(200).json({ allRooms, createdRooms, joinedRooms });
   } catch (err) {
     console.error('[roomController.getUserRooms]', err);
     return res.status(500).json({ error: 'Failed to fetch user rooms.' });

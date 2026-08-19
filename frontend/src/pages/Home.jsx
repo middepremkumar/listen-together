@@ -6,8 +6,8 @@ import { fetchUserRooms, deleteRoomApi } from '../services/api.js';
 import {
   getUserId,
   getSavedName,
-  getAllSavedRoomIds,
   getSavedCreatedRoomIds,
+  getSavedJoinedRoomIds,
   removeSavedRoom
 } from '../utils/session.js';
 import Navbar from '../components/Navbar.jsx';
@@ -20,21 +20,44 @@ export default function Home() {
   const { user, isAuthenticated } = useAuth();
   const [createdRooms, setCreatedRooms] = useState([]);
   const [joinedRooms, setJoinedRooms] = useState([]);
-  const [loadingRooms, setLoadingRooms] = useState(true);
-  const [activeTab, setActiveTab] = useState('created'); // 'created' | 'joined'
+  const [loadingRooms, setLoadingRooms] = useState(false);
+  const [activeTab, setActiveTab] = useState('all'); // 'all' | 'created' | 'joined'
   const [deleteTargetRoomId, setDeleteTargetRoomId] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
   const currentUserId = user?.userId || getUserId();
 
+  // Load rooms from localStorage immediately, then reconcile with server
   async function loadRooms() {
+    const localCreatedIds = getSavedCreatedRoomIds();
+    const localJoinedIds = getSavedJoinedRoomIds();
+
+    // Initial placeholder state from local storage so user sees rooms instantly
+    if (localCreatedIds.length > 0 || localJoinedIds.length > 0) {
+      setCreatedRooms((prev) => {
+        if (prev.length > 0) return prev;
+        return localCreatedIds.map((id) => ({
+          roomId: id,
+          isAdmin: true,
+          password: localStorage.getItem(`lt_room_pwd_${id}`) || '',
+          memberCount: 0
+        }));
+      });
+      setJoinedRooms((prev) => {
+        if (prev.length > 0) return prev;
+        return localJoinedIds.map((id) => ({
+          roomId: id,
+          isAdmin: false,
+          password: localStorage.getItem(`lt_room_pwd_${id}`) || '',
+          memberCount: 0
+        }));
+      });
+    }
+
     try {
       setLoadingRooms(true);
-      const savedIds = getAllSavedRoomIds();
-      const localCreatedIds = getSavedCreatedRoomIds();
-      const data = await fetchUserRooms(currentUserId, savedIds);
+      const data = await fetchUserRooms(currentUserId, localCreatedIds, localJoinedIds);
 
-      // Combine server rooms + local created status
       const serverCreated = (data?.createdRooms || []).map((r) => ({
         ...r,
         isAdmin: true,
@@ -43,13 +66,37 @@ export default function Home() {
 
       const serverJoined = (data?.joinedRooms || []).map((r) => {
         const isLocallyCreated = localCreatedIds.includes(r.roomId);
-        const storedPwd = localStorage.getItem(`lt_room_pwd_${r.roomId}`) || r.password || '';
         return {
           ...r,
           isAdmin: isLocallyCreated || r.isAdmin,
-          password: storedPwd
+          password: r.password || localStorage.getItem(`lt_room_pwd_${r.roomId}`) || ''
         };
       });
+
+      // Also ensure any locally saved created IDs that weren't returned by backend still appear
+      for (const id of localCreatedIds) {
+        if (!serverCreated.some((r) => r.roomId === id) && !serverJoined.some((r) => r.roomId === id)) {
+          serverCreated.push({
+            roomId: id,
+            creatorName: user?.name || getSavedName() || 'You',
+            isAdmin: true,
+            password: localStorage.getItem(`lt_room_pwd_${id}`) || '',
+            memberCount: 0
+          });
+        }
+      }
+
+      for (const id of localJoinedIds) {
+        if (!serverCreated.some((r) => r.roomId === id) && !serverJoined.some((r) => r.roomId === id)) {
+          serverJoined.push({
+            roomId: id,
+            creatorName: 'Group Host',
+            isAdmin: false,
+            password: localStorage.getItem(`lt_room_pwd_${id}`) || '',
+            memberCount: 0
+          });
+        }
+      }
 
       const allCreated = [
         ...serverCreated,
@@ -57,18 +104,13 @@ export default function Home() {
       ];
       const allJoined = serverJoined.filter((r) => !r.isAdmin);
 
-      // Deduplicate by roomId
       const uniqueCreated = Array.from(new Map(allCreated.map((r) => [r.roomId, r])).values());
       const uniqueJoined = Array.from(new Map(allJoined.map((r) => [r.roomId, r])).values());
 
       setCreatedRooms(uniqueCreated);
       setJoinedRooms(uniqueJoined);
-
-      if (uniqueCreated.length === 0 && uniqueJoined.length > 0) {
-        setActiveTab('joined');
-      }
     } catch {
-      // ignore non-critical fetch errors
+      // ignore network errors on refresh
     } finally {
       setLoadingRooms(false);
     }
@@ -109,8 +151,10 @@ export default function Home() {
     try {
       await deleteRoomApi(deleteTargetRoomId);
       removeSavedRoom(deleteTargetRoomId);
-      toast.info('Room permanently deleted.');
+      toast.info('Room permanently deleted from database.');
       setDeleteTargetRoomId(null);
+      setCreatedRooms((prev) => prev.filter((r) => r.roomId !== deleteTargetRoomId));
+      setJoinedRooms((prev) => prev.filter((r) => r.roomId !== deleteTargetRoomId));
       await loadRooms();
     } catch (err) {
       toast.error(err.message || 'Failed to delete room.');
@@ -119,7 +163,22 @@ export default function Home() {
     }
   }
 
-  const hasRooms = createdRooms.length > 0 || joinedRooms.length > 0;
+  function handleRemoveFromJoined(roomId) {
+    removeSavedRoom(roomId);
+    setJoinedRooms((prev) => prev.filter((r) => r.roomId !== roomId));
+    toast.info('Removed from your joined rooms list.');
+  }
+
+  const allDisplayRooms = Array.from(
+    new Map([...createdRooms, ...joinedRooms].map((r) => [r.roomId, r])).values()
+  );
+
+  const displayedList =
+    activeTab === 'created'
+      ? createdRooms
+      : activeTab === 'joined'
+      ? joinedRooms
+      : allDisplayRooms;
 
   return (
     <div className="min-h-screen bg-bg flex flex-col">
@@ -179,7 +238,7 @@ export default function Home() {
         </div>
 
         {/* My Rooms & Groups Section */}
-        <div className="w-full card p-5 mb-8 animate-fade-in border-bg-border/80">
+        <div className="w-full card p-5 mb-8 animate-fade-in border-bg-border/80 shadow-md">
           <div className="flex items-center justify-between pb-3 border-b border-bg-border mb-4">
             <div className="flex items-center gap-2">
               <span className="text-lg">📁</span>
@@ -195,7 +254,21 @@ export default function Home() {
           </div>
 
           {/* Tabs */}
-          <div className="flex items-center gap-2 mb-4">
+          <div className="flex items-center gap-2 mb-4 flex-wrap">
+            <button
+              onClick={() => setActiveTab('all')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 ${
+                activeTab === 'all'
+                  ? 'bg-accent text-white shadow-sm'
+                  : 'bg-bg-elevated text-gray-400 hover:text-gray-200'
+              }`}
+            >
+              <span>🌟 All Rooms</span>
+              <span className="text-[10px] bg-black/25 px-1.5 py-0.2 rounded-full">
+                {allDisplayRooms.length}
+              </span>
+            </button>
+
             <button
               onClick={() => setActiveTab('created')}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 ${
@@ -218,133 +291,82 @@ export default function Home() {
                   : 'bg-bg-elevated text-gray-400 hover:text-gray-200'
               }`}
             >
-              <span>🚪 Rooms I Joined</span>
+              <span>🚪 Joined Rooms</span>
               <span className="text-[10px] bg-black/25 px-1.5 py-0.2 rounded-full">
                 {joinedRooms.length}
               </span>
             </button>
           </div>
 
-          {loadingRooms ? (
+          {loadingRooms && displayedList.length === 0 ? (
             <div className="text-center py-8">
               <div className="w-6 h-6 border-2 border-accent border-t-transparent rounded-full animate-spin mx-auto mb-2" />
               <p className="text-gray-400 text-xs">Loading your rooms…</p>
             </div>
-          ) : activeTab === 'created' ? (
-            createdRooms.length === 0 ? (
-              <div className="text-center py-8 bg-bg-elevated/40 rounded-xl border border-bg-border/60">
-                <span className="text-2xl mb-2 block">✨</span>
-                <p className="text-gray-300 text-xs font-semibold mb-1">No rooms created yet</p>
-                <p className="text-gray-500 text-[11px] mb-3">Create your first room and become the Group Admin.</p>
-                <button
-                  onClick={() => navigate('/create')}
-                  className="btn-secondary !text-xs !py-1.5 !px-3"
-                >
-                  Create a Room
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {createdRooms.map((r) => (
-                  <div
-                    key={r.roomId}
-                    className="p-3.5 bg-bg-elevated hover:bg-bg-surface border border-bg-border hover:border-accent/40 rounded-xl transition flex flex-col justify-between gap-3 shadow-xs"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-bold text-gray-100 font-mono bg-bg-surface px-1.5 py-0.5 rounded border border-bg-border">
-                            {r.roomId}
-                          </span>
-                          <span className="text-[10px] bg-amber-500/15 text-amber-300 font-semibold px-1.5 py-0.2 rounded border border-amber-500/30">
-                            👑 Admin
-                          </span>
-                        </div>
-                        <span className="text-[10px] text-gray-400 flex items-center gap-1">
-                          <span className={`w-1.5 h-1.5 rounded-full ${r.memberCount > 0 ? 'bg-emerald-400' : 'bg-gray-500'}`} />
-                          {r.memberCount} online
-                        </span>
-                      </div>
-
-                      {r.password && (
-                        <div className="flex items-center justify-between gap-2 p-1.5 rounded bg-bg-surface border border-bg-border/60 my-2">
-                          <div className="flex items-center gap-1 min-w-0">
-                            <span className="text-[11px]">🔑</span>
-                            <span className="text-[11px] font-mono text-gray-300 truncate">
-                              {r.password}
-                            </span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleCopyPasskey(r.password)}
-                            className="text-[10px] text-accent hover:underline flex-shrink-0"
-                          >
-                            Copy
-                          </button>
-                        </div>
-                      )}
-
-                      {r.currentVideoTitle && (
-                        <p className="text-[11px] text-gray-400 truncate mt-1 flex items-center gap-1">
-                          <span>🎵</span>
-                          <span className="truncate">{r.currentVideoTitle}</span>
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-2 pt-2 border-t border-bg-border/60">
-                      <button
-                        onClick={() => handleRejoin(r)}
-                        className="btn-primary !py-1.5 !px-3 text-xs flex-1 flex items-center justify-center gap-1"
-                      >
-                        <span>▶</span>
-                        <span>Rejoin</span>
-                      </button>
-                      <button
-                        onClick={() => setDeleteTargetRoomId(r.roomId)}
-                        className="btn-secondary !py-1.5 !px-2.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 border-red-900/40"
-                        title="Delete room"
-                      >
-                        <span>🗑️</span>
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )
-          ) : joinedRooms.length === 0 ? (
+          ) : displayedList.length === 0 ? (
             <div className="text-center py-8 bg-bg-elevated/40 rounded-xl border border-bg-border/60">
-              <span className="text-2xl mb-2 block">🚪</span>
-              <p className="text-gray-300 text-xs font-semibold mb-1">No joined rooms yet</p>
-              <p className="text-gray-500 text-[11px] mb-3">Join a friend's room with their passkey.</p>
+              <span className="text-2xl mb-2 block">✨</span>
+              <p className="text-gray-300 text-xs font-semibold mb-1">No rooms found</p>
+              <p className="text-gray-500 text-[11px] mb-3">Create your first room and become the Group Admin.</p>
               <button
-                onClick={() => navigate('/join')}
+                onClick={() => navigate('/create')}
                 className="btn-secondary !text-xs !py-1.5 !px-3"
               >
-                Join a Room
+                Create a Room
               </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {joinedRooms.map((r) => (
+              {displayedList.map((r) => (
                 <div
                   key={r.roomId}
                   className="p-3.5 bg-bg-elevated hover:bg-bg-surface border border-bg-border hover:border-accent/40 rounded-xl transition flex flex-col justify-between gap-3 shadow-xs"
                 >
                   <div>
                     <div className="flex items-center justify-between gap-2 mb-1.5">
-                      <span className="text-xs font-bold text-gray-100 font-mono bg-bg-surface px-1.5 py-0.5 rounded border border-bg-border">
-                        {r.roomId}
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-gray-100 font-mono bg-bg-surface px-1.5 py-0.5 rounded border border-bg-border">
+                          {r.roomId}
+                        </span>
+                        {r.isAdmin ? (
+                          <span className="text-[10px] bg-amber-500/15 text-amber-300 font-semibold px-1.5 py-0.2 rounded border border-amber-500/30">
+                            👑 Admin
+                          </span>
+                        ) : (
+                          <span className="text-[10px] bg-blue-500/15 text-blue-300 font-semibold px-1.5 py-0.2 rounded border border-blue-500/30">
+                            👥 Member
+                          </span>
+                        )}
+                      </div>
                       <span className="text-[10px] text-gray-400 flex items-center gap-1">
                         <span className={`w-1.5 h-1.5 rounded-full ${r.memberCount > 0 ? 'bg-emerald-400' : 'bg-gray-500'}`} />
-                        {r.memberCount} online
+                        {r.memberCount > 0 ? `${r.memberCount} online` : 'Active'}
                       </span>
                     </div>
 
-                    <p className="text-[11px] text-gray-400">
-                      Host: <strong className="text-gray-300">{r.creatorName}</strong>
-                    </p>
+                    {r.creatorName && (
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        Host: <strong className="text-gray-300">{r.creatorName}</strong>
+                      </p>
+                    )}
+
+                    {r.password && (
+                      <div className="flex items-center justify-between gap-2 p-1.5 rounded bg-bg-surface border border-bg-border/60 my-2">
+                        <div className="flex items-center gap-1 min-w-0">
+                          <span className="text-[11px]">🔑</span>
+                          <span className="text-[11px] font-mono text-gray-300 truncate">
+                            {r.password}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleCopyPasskey(r.password)}
+                          className="text-[10px] text-accent hover:underline flex-shrink-0 font-medium"
+                        >
+                          Copy
+                        </button>
+                      </div>
+                    )}
 
                     {r.currentVideoTitle && (
                       <p className="text-[11px] text-gray-400 truncate mt-1 flex items-center gap-1">
@@ -354,14 +376,32 @@ export default function Home() {
                     )}
                   </div>
 
-                  <div className="pt-2 border-t border-bg-border/60">
+                  <div className="flex items-center gap-2 pt-2 border-t border-bg-border/60">
                     <button
                       onClick={() => handleRejoin(r)}
-                      className="btn-primary !py-1.5 !px-3 text-xs w-full flex items-center justify-center gap-1"
+                      className="btn-primary !py-1.5 !px-3 text-xs flex-1 flex items-center justify-center gap-1"
                     >
                       <span>▶</span>
                       <span>Rejoin Room</span>
                     </button>
+
+                    {r.isAdmin ? (
+                      <button
+                        onClick={() => setDeleteTargetRoomId(r.roomId)}
+                        className="btn-secondary !py-1.5 !px-2.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 border-red-900/40"
+                        title="Permanently delete room from database"
+                      >
+                        <span>🗑️</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleRemoveFromJoined(r.roomId)}
+                        className="btn-secondary !py-1.5 !px-2 text-xs text-gray-500 hover:text-gray-300"
+                        title="Remove from your list"
+                      >
+                        <span>✕</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -383,10 +423,10 @@ export default function Home() {
           <div className="card w-full max-w-sm p-6 border-red-500/30 animate-scale-in">
             <div className="flex items-center gap-2.5 text-red-400 mb-3">
               <span className="text-xl">⚠️</span>
-              <h2 className="text-base font-bold text-gray-100">Permanently Delete Room?</h2>
+              <h2 className="text-base font-bold text-gray-100">Delete Room from Database?</h2>
             </div>
             <p className="text-xs text-gray-400 mb-5 leading-relaxed">
-              Are you sure you want to permanently delete room <strong className="text-gray-200">{deleteTargetRoomId}</strong>? All queue and chat history will be permanently erased.
+              Are you sure you want to permanently delete room <strong className="text-gray-200">{deleteTargetRoomId}</strong> from the database? All queue and chat history will be permanently erased.
             </p>
             <div className="flex items-center justify-end gap-2">
               <button
@@ -403,7 +443,7 @@ export default function Home() {
                 disabled={deleting}
                 className="btn-primary !bg-red-600 hover:!bg-red-500 !py-1.5 !px-4 text-xs"
               >
-                {deleting ? 'Deleting…' : 'Yes, Delete Room'}
+                {deleting ? 'Deleting…' : 'Yes, Delete from Database'}
               </button>
             </div>
           </div>

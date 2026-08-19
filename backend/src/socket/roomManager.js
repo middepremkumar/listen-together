@@ -467,21 +467,26 @@ function pruneEmptyRooms() {
   }
 }
 
-async function getUserRooms(userId, clientRoomIds = []) {
+async function getUserRooms(userId, clientCreatedIds = [], clientJoinedIds = []) {
   const cleanUserId = typeof userId === 'string' ? userId.trim() : '';
   const roomMap = new Map();
 
-  const formattedRoomIds = Array.isArray(clientRoomIds)
-    ? clientRoomIds.map((id) => String(id).toUpperCase().trim()).filter(Boolean)
+  const formattedCreatedIds = Array.isArray(clientCreatedIds)
+    ? clientCreatedIds.map((id) => String(id).toUpperCase().trim()).filter(Boolean)
     : [];
+
+  const formattedJoinedIds = Array.isArray(clientJoinedIds)
+    ? clientJoinedIds.map((id) => String(id).toUpperCase().trim()).filter(Boolean)
+    : [];
+
+  const allClientIds = Array.from(new Set([...formattedCreatedIds, ...formattedJoinedIds]));
 
   // 1. Gather from memory
   for (const [roomId, room] of rooms.entries()) {
-    const isCreator = cleanUserId && room.creatorUserId === cleanUserId;
-    const isMember = cleanUserId && Array.from(room.members.values()).some((m) => m.userId === cleanUserId);
-    const isClientSaved = formattedRoomIds.includes(roomId);
+    const isCreator = (cleanUserId && room.creatorUserId === cleanUserId) || formattedCreatedIds.includes(roomId);
+    const isMember = (cleanUserId && Array.from(room.members.values()).some((m) => m.userId === cleanUserId)) || formattedJoinedIds.includes(roomId);
 
-    if (isCreator || isMember || isClientSaved) {
+    if (isCreator || isMember) {
       roomMap.set(roomId, {
         roomId: room.roomId,
         creatorUserId: room.creatorUserId,
@@ -505,19 +510,19 @@ async function getUserRooms(userId, clientRoomIds = []) {
         orConditions.push({ creatorUserId: cleanUserId });
         orConditions.push({ 'members.userId': cleanUserId });
       }
-      if (formattedRoomIds.length > 0) {
-        orConditions.push({ roomId: { $in: formattedRoomIds } });
+      if (allClientIds.length > 0) {
+        orConditions.push({ roomId: { $in: allClientIds } });
       }
 
       if (orConditions.length > 0) {
         const docs = await Room.find({ $or: orConditions })
           .sort({ lastActivity: -1 })
-          .limit(30)
+          .limit(40)
           .lean();
 
         for (const doc of docs) {
           if (!roomMap.has(doc.roomId)) {
-            const isCreator = cleanUserId && doc.creatorUserId === cleanUserId;
+            const isCreator = (cleanUserId && doc.creatorUserId === cleanUserId) || formattedCreatedIds.includes(doc.roomId);
             roomMap.set(doc.roomId, {
               roomId: doc.roomId,
               creatorUserId: doc.creatorUserId,
@@ -542,7 +547,7 @@ async function getUserRooms(userId, clientRoomIds = []) {
   const createdRooms = all.filter((r) => r.isAdmin);
   const joinedRooms = all.filter((r) => !r.isAdmin);
 
-  return { createdRooms, joinedRooms };
+  return { allRooms: all, createdRooms, joinedRooms };
 }
 
 module.exports = {
