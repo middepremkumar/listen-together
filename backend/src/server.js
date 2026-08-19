@@ -7,6 +7,7 @@ const { Server } = require('socket.io');
 
 const { connectDB } = require('./config/db');
 const roomRoutes = require('./routes/roomRoutes');
+const authRoutes = require('./routes/authRoutes');
 const { apiLimiter, createRoomLimiter } = require('./middleware/rateLimiter');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 const { initSocket } = require('./socket/socketHandler');
@@ -47,6 +48,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+app.use('/api/auth', authRoutes);
 app.use('/api/rooms', createRoomLimiter, roomRoutes);
 
 app.use(notFoundHandler);

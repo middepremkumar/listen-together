@@ -16,6 +16,29 @@ async function handleResponse(res) {
   return data;
 }
 
+export async function googleLogin(credential) {
+  const res = await fetch(`${API_BASE_URL}/api/auth/google`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ credential })
+  });
+  return handleResponse(res);
+}
+
+export async function fetchCurrentUser(token) {
+  const res = await fetch(`${API_BASE_URL}/api/auth/me`, {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+  return handleResponse(res);
+}
+
+export async function fetchAuthConfig() {
+  const res = await fetch(`${API_BASE_URL}/api/auth/config`);
+  return handleResponse(res);
+}
+
 export async function createRoom(hostName) {
   const res = await fetch(`${API_BASE_URL}/api/rooms`, {
     method: 'POST',

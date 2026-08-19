@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useSocketContext } from '../context/SocketContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
 import { getUserId, getSavedName, saveName } from '../utils/session.js';
 import VideoPlayer from '../components/VideoPlayer.jsx';
 import Chat from '../components/Chat.jsx';
@@ -21,10 +22,12 @@ export default function Room() {
   const location = useLocation();
   const navigate = useNavigate();
   const { socket, connectionState } = useSocketContext();
+  const { user } = useAuth();
   const toast = useToast();
 
-  const userId = useRef(getUserId()).current;
-  const [displayName] = useState(location.state?.name || getSavedName());
+  const userId = useRef(user?.userId || getUserId()).current;
+  const [displayName] = useState(location.state?.name || user?.name || getSavedName());
+  const userPicture = location.state?.picture || user?.picture || '';
 
   const [joinState, setJoinState] = useState('joining'); // joining | joined | error | kicked
   const [joinError, setJoinError] = useState('');
@@ -56,7 +59,7 @@ export default function Room() {
   const joinRoom = useCallback(() => {
     if (!displayName) return;
     setJoinState('joining');
-    socket.emit('room:join', { roomId, userId, name: displayName }, (res) => {
+    socket.emit('room:join', { roomId, userId, name: displayName, picture: userPicture }, (res) => {
       if (!res?.ok) {
         setJoinState('error');
         setJoinError(res?.error || 'Failed to join room.');
@@ -66,7 +69,7 @@ export default function Room() {
       applyState(res.state);
       setJoinState('joined');
     });
-  }, [displayName, roomId, socket, userId]);
+  }, [displayName, roomId, socket, userId, userPicture]);
 
   function applyState(state) {
     setMembers(state.members);

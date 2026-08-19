@@ -4,6 +4,7 @@ const MemberSchema = new mongoose.Schema(
   {
     userId: { type: String, required: true },
     name: { type: String, required: true, maxlength: 30 },
+    picture: { type: String, default: '' },
     isHost: { type: Boolean, default: false },
     connected: { type: Boolean, default: true }
   },
@@ -18,6 +19,8 @@ const QueueItemSchema = new mongoose.Schema(
     thumbnail: { type: String, default: '' },
     duration: { type: Number, default: 0 },
     addedBy: { type: String, default: 'Unknown' },
+    addedByUserId: { type: String, default: '' },
+    addedByPicture: { type: String, default: '' },
     addedAt: { type: Date, default: Date.now }
   },
   { _id: false }
@@ -28,6 +31,8 @@ const ChatMessageSchema = new mongoose.Schema(
     id: { type: String, required: true },
     type: { type: String, enum: ['chat', 'system'], default: 'chat' },
     sender: { type: String, default: 'System' },
+    senderId: { type: String, default: '' },
+    senderPicture: { type: String, default: '' },
     text: { type: String, required: true, maxlength: 500 },
     timestamp: { type: Date, default: Date.now }
   },

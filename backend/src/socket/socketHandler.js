@@ -67,11 +67,13 @@ function initSocket(io) {
 
   io.on('connection', (socket) => {
     socket.data.userId = null;
+    socket.data.userId = null;
     socket.data.roomId = null;
     socket.data.name = null;
+    socket.data.picture = null;
 
     // ---------- JOIN ROOM ----------
-    socket.on('room:join', async ({ roomId, userId, name } = {}, ack) => {
+    socket.on('room:join', async ({ roomId, userId, name, picture } = {}, ack) => {
       try {
         if (typeof ack !== 'function') ack = () => {};
 
@@ -118,11 +120,13 @@ function initSocket(io) {
         }
 
         const wasNewMember = !existingMember;
-        roomManager.addMember(room, { userId, name: cleanName, socketId: socket.id });
+        const userPic = typeof picture === 'string' ? picture : '';
+        roomManager.addMember(room, { userId, name: cleanName, picture: userPic, socketId: socket.id });
 
         socket.data.userId = userId;
         socket.data.roomId = room.roomId;
         socket.data.name = cleanName;
+        socket.data.picture = userPic;
         socket.join(room.roomId);
 
         ack({ ok: true, state: roomManager.serializeRoom(room) });
@@ -170,6 +174,7 @@ function initSocket(io) {
         type: 'chat',
         sender: socket.data.name,
         senderId: socket.data.userId,
+        senderPicture: socket.data.picture || '',
         text: sanitizeMessage(text),
         timestamp: Date.now()
       };
@@ -259,6 +264,8 @@ function initSocket(io) {
         thumbnail: meta.thumbnail,
         duration: meta.duration,
         addedBy: socket.data.name,
+        addedByUserId: socket.data.userId,
+        addedByPicture: socket.data.picture || '',
         addedAt: Date.now()
       };
 

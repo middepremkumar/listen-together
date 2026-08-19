@@ -106,6 +106,7 @@ function serializeMembers(room) {
   return Array.from(room.members.values()).map((m) => ({
     userId: m.userId,
     name: m.name,
+    picture: m.picture || '',
     isHost: m.isHost,
     connected: m.connected
   }));
@@ -123,17 +124,19 @@ function serializeRoom(room) {
   };
 }
 
-function addMember(room, { userId, name, socketId }) {
+function addMember(room, { userId, name, picture, socketId }) {
   let member = room.members.get(userId);
 
   if (member) {
     member.sockets.add(socketId);
     member.connected = true;
     member.name = name || member.name;
+    if (picture) member.picture = picture;
   } else {
     member = {
       userId,
       name,
+      picture: picture || '',
       isHost: false,
       sockets: new Set([socketId]),
       connected: true
