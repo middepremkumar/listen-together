@@ -397,7 +397,7 @@ export default function VideoPlayer({
 
         {/* Placeholder when no video is selected */}
         {!videoId && (
-          <div className="absolute inset-0 bg-bg-elevated flex flex-col items-center justify-center border border-bg-border text-center px-6">
+          <div className="absolute inset-0 bg-bg-elevated flex flex-col items-center justify-center border border-bg-border text-center px-6 z-10">
             <span className="text-4xl mb-3">📺</span>
             <p className="text-gray-300 font-medium text-sm mb-1">No video playing yet</p>
             <p className="text-gray-500 text-xs">
@@ -407,8 +407,8 @@ export default function VideoPlayer({
         )}
 
         {/* Loading overlay */}
-        {videoId && !ready && !apiError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-bg-elevated/90 backdrop-blur-xs">
+        {videoId && !ready && !apiError && !videoError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-bg-elevated/90 backdrop-blur-xs z-10">
             <div className="flex flex-col items-center gap-2">
               <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
               <span className="text-gray-400 text-xs font-medium">Connecting YouTube player…</span>
@@ -417,7 +417,7 @@ export default function VideoPlayer({
         )}
 
         {/* Video Embedding Error display (e.g. VEVO / Restricted embed) */}
-        {videoError && (
+        {videoId && videoError && (
           <div className="absolute inset-0 bg-bg-elevated/95 backdrop-blur-sm flex flex-col items-center justify-center border border-amber-800/60 text-center p-6 z-20">
             <span className="text-3xl mb-2">🚫</span>
             <h4 className="text-sm font-semibold text-amber-300 mb-1">Cannot Play Video</h4>
@@ -456,8 +456,8 @@ export default function VideoPlayer({
           </div>
         )}
 
-        {/* API Error display */}
-        {apiError && (
+        {/* API Error display (only shown when a video is being played and script failed) */}
+        {videoId && apiError && (
           <div className="absolute inset-0 bg-bg-elevated/95 backdrop-blur-sm flex flex-col items-center justify-center border border-red-900/50 text-center p-6 z-20">
             <span className="text-3xl mb-2">⚠️</span>
             <h4 className="text-sm font-semibold text-red-300 mb-1">Couldn't connect to YouTube</h4>
