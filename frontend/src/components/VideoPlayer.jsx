@@ -18,26 +18,39 @@ function loadYouTubeApi() {
       }
     }, 50);
 
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       clearInterval(checkInterval);
-    }, 8000);
+      if (window.YT && window.YT.Player) {
+        resolve(window.YT);
+      } else {
+        apiPromise = null;
+        reject(new Error('YouTube IFrame API script load timed out'));
+      }
+    }, 10000);
 
     const prevCallback = window.onYouTubeIframeAPIReady;
     window.onYouTubeIframeAPIReady = () => {
       clearInterval(checkInterval);
+      clearTimeout(timer);
       if (typeof prevCallback === 'function') prevCallback();
       resolve(window.YT);
     };
 
-    if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) {
-      const tag = document.createElement('script');
-      tag.src = 'https://www.youtube.com/iframe_api';
-      tag.async = true;
-      tag.onerror = () => {
+    let scriptTag = document.querySelector('script[src*="youtube.com/iframe_api"]');
+    if (!scriptTag) {
+      scriptTag = document.createElement('script');
+      scriptTag.src = 'https://www.youtube.com/iframe_api';
+      scriptTag.async = true;
+      scriptTag.onerror = () => {
         clearInterval(checkInterval);
+        clearTimeout(timer);
+        apiPromise = null;
+        if (scriptTag && scriptTag.parentNode) {
+          scriptTag.parentNode.removeChild(scriptTag);
+        }
         reject(new Error('Failed to load YouTube IFrame API script'));
       };
-      document.head.appendChild(tag);
+      document.head.appendChild(scriptTag);
     }
   });
 
@@ -59,10 +72,12 @@ export default function VideoPlayer({
   onEnded,
   onHeartbeat
 }) {
-  const containerRef = useRef(null);
+  const wrapperRef = useRef(null);
   const playerRef = useRef(null);
   const [ready, setReady] = useState(false);
   const [apiError, setApiError] = useState(false);
+  const [videoError, setVideoError] = useState(null);
+  const [retryCount, setRetryCount] = useState(0);
   const [localPlaying, setLocalPlaying] = useState(false);
   const [needsUserPlay, setNeedsUserPlay] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -109,23 +124,37 @@ export default function VideoPlayer({
   // Initialize YouTube Iframe Player
   useEffect(() => {
     let cancelled = false;
+    setApiError(false);
+    setVideoError(null);
+    setReady(false);
 
     loadYouTubeApi()
       .then((YT) => {
-        if (cancelled || !containerRef.current) return;
+        if (cancelled || !wrapperRef.current) return;
 
-        playerRef.current = new YT.Player(containerRef.current, {
+        // Cleanly recreate mount container so React & YT don't conflict
+        wrapperRef.current.innerHTML = '';
+        const mountNode = document.createElement('div');
+        mountNode.style.width = '100%';
+        mountNode.style.height = '100%';
+        wrapperRef.current.appendChild(mountNode);
+
+        const origin = (typeof window !== 'undefined' && window.location.origin && window.location.origin !== 'null')
+          ? window.location.origin
+          : undefined;
+
+        playerRef.current = new YT.Player(mountNode, {
           height: '100%',
           width: '100%',
           videoId: videoId || undefined,
           playerVars: {
             autoplay: isPlaying ? 1 : 0,
-            controls: 1, // Enable YouTube desktop player controls for direct fallback
+            controls: 1, // Native YouTube controls available for volume / fullscreen / direct seek
             playsinline: 1,
             rel: 0,
             modestbranding: 1,
             enablejsapi: 1,
-            origin: window.location.origin
+            ...(origin ? { origin } : {})
           },
           events: {
             onReady: (event) => {
@@ -144,14 +173,26 @@ export default function VideoPlayer({
             },
             onStateChange: handleStateChange,
             onError: (err) => {
-              console.warn('[YouTube Player] Error code:', err?.data);
+              const code = err?.data;
+              console.warn('[YouTube Player] Error code:', code);
+              if (code === 150 || code === 101) {
+                setVideoError('The video creator or record label does not allow embedded playback. Please try another video.');
+              } else if (code === 100) {
+                setVideoError('This video does not exist or has been removed from YouTube.');
+              } else if (code === 2) {
+                setVideoError('Invalid YouTube video parameter or URL.');
+              } else {
+                setVideoError('YouTube player encountered an issue loading this video.');
+              }
             }
           }
         });
       })
       .catch((err) => {
         console.error('[YouTube API] Load failed:', err);
-        setApiError(true);
+        if (!cancelled) {
+          setApiError(true);
+        }
       });
 
     return () => {
@@ -163,7 +204,7 @@ export default function VideoPlayer({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [retryCount]);
 
   // Handle video changes
   useEffect(() => {
@@ -171,6 +212,7 @@ export default function VideoPlayer({
 
     if (currentLoadedVideoId.current !== videoId) {
       currentLoadedVideoId.current = videoId;
+      setVideoError(null);
       suppress(1200);
 
       const targetPos = typeof syncPosition === 'number' ? syncPosition : 0;
@@ -182,38 +224,47 @@ export default function VideoPlayer({
     }
   }, [videoId, ready, isPlaying, syncPosition]);
 
-  // Handle authoritative sync updates (from host or other clients)
+  // Handle authoritative sync updates (from host or server)
   useEffect(() => {
     if (!ready || !playerRef.current || !videoId) return;
     const player = playerRef.current;
 
-    suppress(800);
-
     try {
       const cur = player.getCurrentTime?.() ?? 0;
-      if (typeof syncPosition === 'number' && Math.abs(cur - syncPosition) > DRIFT_THRESHOLD_SECONDS) {
+      const state = player.getPlayerState?.();
+
+      // Only sync seek for listeners (Host is the clock source)
+      if (!isHost && typeof syncPosition === 'number' && Math.abs(cur - syncPosition) > DRIFT_THRESHOLD_SECONDS) {
+        suppress(1000);
         player.seekTo(syncPosition, true);
         setCurrentTime(syncPosition);
       }
 
+      // Sync play/pause state
       if (isPlaying) {
-        player.playVideo();
-        // Check after 800ms if desktop browser blocked unmuted autoplay
-        setTimeout(() => {
-          if (playerRef.current?.getPlayerState?.() !== 1) {
-            setNeedsUserPlay(true);
-          } else {
-            setNeedsUserPlay(false);
-          }
-        }, 800);
+        if (state !== 1 && state !== 3) {
+          suppress(800);
+          player.playVideo();
+          // Check if mobile / desktop blocked unmuted autoplay
+          setTimeout(() => {
+            if (playerRef.current?.getPlayerState?.() !== 1) {
+              setNeedsUserPlay(true);
+            } else {
+              setNeedsUserPlay(false);
+            }
+          }, 800);
+        }
       } else {
-        player.pauseVideo();
+        if (state === 1 || state === 3) {
+          suppress(800);
+          player.pauseVideo();
+        }
         setNeedsUserPlay(false);
       }
     } catch {
       // player might still be transitioning
     }
-  }, [syncSignal, ready, isPlaying, syncPosition, videoId]);
+  }, [syncSignal, ready, isPlaying, syncPosition, videoId, isHost]);
 
   // Track playback time, duration & emit host heartbeat
   useEffect(() => {
@@ -233,13 +284,13 @@ export default function VideoPlayer({
         setLocalPlaying(state === 1);
 
         if (isPlaying && state !== 1 && state !== 3) {
-          // If room is playing but local player is paused/cued, prompt user
           setNeedsUserPlay(true);
         } else if (state === 1) {
           setNeedsUserPlay(false);
         }
 
-        if (isHost && isPlaying) {
+        // Only emit heartbeat when isHost AND isPlaying
+        if (isHost && isPlaying && state === 1) {
           const now = Date.now();
           const expected = lastKnown.current.position + (now - lastKnown.current.time) / 1000;
 
@@ -263,6 +314,7 @@ export default function VideoPlayer({
   function handleTogglePlay() {
     if (!ready || !playerRef.current) return;
     const player = playerRef.current;
+    suppress(1000);
 
     if (isHost) {
       if (isPlaying) {
@@ -287,8 +339,9 @@ export default function VideoPlayer({
   function handleStartAudioSync() {
     if (!ready || !playerRef.current) return;
     const player = playerRef.current;
+    suppress(1000);
     player.unMute();
-    player.setVolume(100);
+    player.setVolume(volume || 100);
     if (typeof syncPosition === 'number') {
       player.seekTo(syncPosition, true);
     }
@@ -299,7 +352,7 @@ export default function VideoPlayer({
   function handleManualSeek(e) {
     const val = parseFloat(e.target.value);
     if (!isNaN(val) && playerRef.current?.seekTo) {
-      suppress(1000);
+      suppress(1200);
       playerRef.current.seekTo(val, true);
       setCurrentTime(val);
       if (isHost) {
@@ -338,7 +391,7 @@ export default function VideoPlayer({
       <div className="aspect-video w-full bg-black rounded-2xl overflow-hidden border border-bg-border relative shadow-lg">
         {/* The YouTube iframe container */}
         <div
-          ref={containerRef}
+          ref={wrapperRef}
           className={`w-full h-full ${!videoId ? 'opacity-0 pointer-events-none' : ''}`}
         />
 
@@ -354,11 +407,31 @@ export default function VideoPlayer({
         )}
 
         {/* Loading overlay */}
-        {videoId && !ready && (
+        {videoId && !ready && !apiError && (
           <div className="absolute inset-0 flex items-center justify-center bg-bg-elevated/90 backdrop-blur-xs">
             <div className="flex flex-col items-center gap-2">
               <div className="w-8 h-8 border-2 border-accent border-t-transparent rounded-full animate-spin" />
               <span className="text-gray-400 text-xs font-medium">Connecting YouTube player…</span>
+            </div>
+          </div>
+        )}
+
+        {/* Video Embedding Error display (e.g. VEVO / Restricted embed) */}
+        {videoError && (
+          <div className="absolute inset-0 bg-bg-elevated/95 backdrop-blur-sm flex flex-col items-center justify-center border border-amber-800/60 text-center p-6 z-20">
+            <span className="text-3xl mb-2">🚫</span>
+            <h4 className="text-sm font-semibold text-amber-300 mb-1">Cannot Play Video</h4>
+            <p className="text-gray-300 text-xs max-w-sm mb-4 leading-relaxed">
+              {videoError}
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setRetryCount((c) => c + 1)}
+                className="btn-secondary !py-1.5 !px-3 text-xs flex items-center gap-1"
+              >
+                <span>🔄</span>
+                <span>Retry</span>
+              </button>
             </div>
           </div>
         )}
@@ -385,11 +458,21 @@ export default function VideoPlayer({
 
         {/* API Error display */}
         {apiError && (
-          <div className="absolute inset-0 bg-bg-elevated flex flex-col items-center justify-center border border-red-900 text-center px-6">
-            <span className="text-4xl mb-3">⚠️</span>
-            <p className="text-red-400 text-sm">
-              Couldn't connect to YouTube. Please check ad-blockers/network and refresh.
+          <div className="absolute inset-0 bg-bg-elevated/95 backdrop-blur-sm flex flex-col items-center justify-center border border-red-900/50 text-center p-6 z-20">
+            <span className="text-3xl mb-2">⚠️</span>
+            <h4 className="text-sm font-semibold text-red-300 mb-1">Couldn't connect to YouTube</h4>
+            <p className="text-gray-300 text-xs max-w-sm mb-4 leading-relaxed">
+              The YouTube player script was blocked. Please check your mobile ad-blocker (Brave Shields, Safari blockers, or Private DNS) or network.
             </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setRetryCount((c) => c + 1)}
+                className="btn-primary !py-1.5 !px-4 text-xs font-medium flex items-center gap-1.5 shadow-md"
+              >
+                <span>🔄</span>
+                <span>Retry Connection</span>
+              </button>
+            </div>
           </div>
         )}
       </div>

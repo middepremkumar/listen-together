@@ -207,7 +207,7 @@ function initSocket(io) {
       room.currentVideo.updatedAt = Date.now();
       roomManager.touch(room);
 
-      socket.to(room.roomId).emit('playback:update', { ...room.currentVideo, reason: 'play' });
+      io.to(room.roomId).emit('playback:update', { ...room.currentVideo, reason: 'play' });
     });
 
     socket.on('playback:pause', ({ position } = {}) => {
@@ -221,7 +221,7 @@ function initSocket(io) {
       room.currentVideo.updatedAt = Date.now();
       roomManager.touch(room);
 
-      socket.to(room.roomId).emit('playback:update', { ...room.currentVideo, reason: 'pause' });
+      io.to(room.roomId).emit('playback:update', { ...room.currentVideo, reason: 'pause' });
     });
 
     socket.on('playback:seek', ({ position } = {}) => {
@@ -233,7 +233,7 @@ function initSocket(io) {
       room.currentVideo.updatedAt = Date.now();
       roomManager.touch(room);
 
-      socket.to(room.roomId).emit('playback:update', { ...room.currentVideo, reason: 'seek' });
+      io.to(room.roomId).emit('playback:update', { ...room.currentVideo, reason: 'seek' });
     });
 
     // Host emits this periodically; used to correct drift on other clients.

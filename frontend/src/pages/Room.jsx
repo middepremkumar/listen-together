@@ -351,9 +351,18 @@ export default function Room() {
             isHost={isHost}
             syncSignal={syncSignal}
             syncPosition={currentVideo.position}
-            onPlay={(pos) => socket.emit('playback:play', { position: pos })}
-            onPause={(pos) => socket.emit('playback:pause', { position: pos })}
-            onSeek={(pos) => socket.emit('playback:seek', { position: pos })}
+            onPlay={(pos) => {
+              setCurrentVideo((prev) => ({ ...prev, isPlaying: true, position: pos }));
+              socket.emit('playback:play', { position: pos });
+            }}
+            onPause={(pos) => {
+              setCurrentVideo((prev) => ({ ...prev, isPlaying: false, position: pos }));
+              socket.emit('playback:pause', { position: pos });
+            }}
+            onSeek={(pos) => {
+              setCurrentVideo((prev) => ({ ...prev, position: pos }));
+              socket.emit('playback:seek', { position: pos });
+            }}
             onEnded={() => socket.emit('video:ended')}
             onHeartbeat={(pos, playing) => socket.emit('playback:heartbeat', { position: pos, isPlaying: playing })}
           />
