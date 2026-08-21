@@ -154,6 +154,10 @@ export default function Room() {
     function onHostChanged({ hostUserId: newHost }) {
       setHostUserId(newHost);
     }
+    function onAdminChanged({ creatorUserId: newAdmin, creatorName }) {
+      setCreatorUserId(newAdmin);
+      toast.info(`${creatorName || 'Another member'} is now the Group Admin.`);
+    }
     function onRoomLocked({ locked: newLocked }) {
       setLocked(newLocked);
     }
@@ -181,6 +185,7 @@ export default function Room() {
     socket.on('playback:correction', onPlaybackCorrection);
     socket.on('queue:update', onQueueUpdate);
     socket.on('host:changed', onHostChanged);
+    socket.on('admin:changed', onAdminChanged);
     socket.on('room:locked', onRoomLocked);
     socket.on('room:settingsUpdated', onSettingsUpdated);
     socket.on('room:error', onRoomError);
@@ -194,6 +199,7 @@ export default function Room() {
       socket.off('playback:correction', onPlaybackCorrection);
       socket.off('queue:update', onQueueUpdate);
       socket.off('host:changed', onHostChanged);
+      socket.off('admin:changed', onAdminChanged);
       socket.off('room:locked', onRoomLocked);
       socket.off('room:settingsUpdated', onSettingsUpdated);
       socket.off('room:error', onRoomError);
@@ -277,6 +283,16 @@ export default function Room() {
 
   function handleTransferHost(targetUserId) {
     socket.emit('host:transfer', { userId: targetUserId });
+  }
+
+  function handleTransferAdmin(targetUserId) {
+    socket.emit('admin:transfer', { userId: targetUserId }, (res) => {
+      if (res?.ok) {
+        toast.success('Group Admin role transferred.');
+      } else {
+        toast.error(res?.error || 'Failed to transfer Group Admin role.');
+      }
+    });
   }
 
   function handleDeleteRoom() {
@@ -414,8 +430,10 @@ export default function Room() {
                 members={members}
                 currentUserId={userId}
                 isHost={isHost}
+                isAdmin={isCreator}
                 onKick={handleKick}
                 onTransferHost={handleTransferHost}
+                onTransferAdmin={handleTransferAdmin}
               />
             )}
           </div>

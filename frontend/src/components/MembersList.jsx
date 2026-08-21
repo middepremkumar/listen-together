@@ -1,7 +1,15 @@
 import React from 'react';
 import Avatar from './Avatar.jsx';
 
-export default function MembersList({ members, currentUserId, isHost, onKick, onTransferHost }) {
+export default function MembersList({
+  members,
+  currentUserId,
+  isHost,
+  isAdmin,
+  onKick,
+  onTransferHost,
+  onTransferAdmin
+}) {
   const connected = members.filter((m) => m.connected);
 
   return (
@@ -61,18 +69,34 @@ export default function MembersList({ members, currentUserId, isHost, onKick, on
               </div>
             </div>
 
-            {isHost && m.userId !== currentUserId && (
-              <div className="flex items-center gap-1.5 flex-shrink-0">
+            {(isHost || isAdmin) && m.userId !== currentUserId && (
+              <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
+                {isAdmin && !m.isAdmin && (
+                  <button
+                    title={`Make ${m.name} the Group Admin`}
+                    onClick={() => {
+                      if (window.confirm(`Are you sure you want to make ${m.name} the Group Admin?`)) {
+                        onTransferAdmin?.(m.userId);
+                      }
+                    }}
+                    className="text-[10px] px-2 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 rounded-lg transition border border-amber-500/30 flex items-center gap-1 font-medium"
+                  >
+                    <span>👑</span>
+                    <span>Make Admin</span>
+                  </button>
+                )}
+                {!m.isHost && (
+                  <button
+                    title="Make playback host"
+                    onClick={() => onTransferHost?.(m.userId)}
+                    className="text-[11px] px-2 py-1 bg-bg-surface hover:bg-accent/20 hover:text-accent-hover text-gray-400 rounded-lg transition border border-bg-border"
+                  >
+                    Make host
+                  </button>
+                )}
                 <button
-                  title="Make host"
-                  onClick={() => onTransferHost(m.userId)}
-                  className="text-[11px] px-2 py-1 bg-bg-surface hover:bg-accent/20 hover:text-accent-hover text-gray-400 rounded-lg transition border border-bg-border"
-                >
-                  Make host
-                </button>
-                <button
-                  title="Kick"
-                  onClick={() => onKick(m.userId)}
+                  title="Kick member"
+                  onClick={() => onKick?.(m.userId)}
                   className="text-[11px] px-2 py-1 bg-bg-surface hover:bg-red-500/20 hover:text-red-400 text-gray-400 rounded-lg transition border border-bg-border"
                 >
                   Kick

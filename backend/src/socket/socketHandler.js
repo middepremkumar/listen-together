@@ -463,6 +463,38 @@ function initSocket(io) {
       io.to(room.roomId).emit('chat:message', msg);
     });
 
+    socket.on('admin:transfer', async ({ userId: targetId } = {}, ack) => {
+      if (typeof ack !== 'function') ack = () => {};
+      const room = roomManager.getRoom(socket.data.roomId);
+      if (!room) return ack({ ok: false, error: 'Room not found.' });
+
+      const isCreator = !room.creatorUserId || room.creatorUserId === socket.data.userId;
+      if (!isCreator) {
+        return ack({ ok: false, error: 'Only the Group Admin can transfer admin rights.' });
+      }
+
+      if (targetId === socket.data.userId) {
+        return ack({ ok: false, error: 'You are already the Group Admin.' });
+      }
+
+      const target = room.members.get(targetId);
+      if (!target || !target.connected) {
+        return ack({ ok: false, error: 'That member is not available or disconnected.' });
+      }
+
+      room.creatorUserId = targetId;
+      room.creatorName = target.name;
+      roomManager.touch(room);
+      await roomManager.persistRoom(room);
+
+      io.to(room.roomId).emit('admin:changed', { creatorUserId: targetId, creatorName: target.name });
+      io.to(room.roomId).emit('room:members', roomManager.serializeMembers(room));
+
+      const msg = systemMessage(room, `👑 ${socket.data.name} made ${target.name} the Group Admin`);
+      io.to(room.roomId).emit('chat:message', msg);
+      ack({ ok: true });
+    });
+
     socket.on('host:kick', ({ userId: targetId } = {}) => {
       const room = roomManager.getRoom(socket.data.roomId);
       if (!room || !requireHost(io, socket, room)) return;
