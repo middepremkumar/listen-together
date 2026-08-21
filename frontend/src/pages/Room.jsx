@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useSocketContext } from '../context/SocketContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
+import { deleteRoomApi } from '../services/api.js';
 import { getUserId, getSavedName, saveName, saveCreatedRoom, saveJoinedRoom, removeSavedRoom } from '../utils/session.js';
 import VideoPlayer from '../components/VideoPlayer.jsx';
 import Chat from '../components/Chat.jsx';
@@ -295,20 +296,30 @@ export default function Room() {
     });
   }
 
-  function handleDeleteRoom() {
-    return new Promise((resolve, reject) => {
-      socket.emit('room:delete', {}, (res) => {
-        if (res?.ok) {
-          toast.info('Room permanently deleted.');
-          removeSavedRoom(roomId);
-          navigate('/');
-          resolve();
-        } else {
-          toast.error(res?.error || 'Failed to delete room.');
-          reject(new Error(res?.error || 'Failed to delete room.'));
-        }
-      });
-    });
+  async function handleDeleteRoom() {
+    try {
+      let socketSucceeded = false;
+      try {
+        const res = await new Promise((resolve) => {
+          socket.emit('room:delete', {}, (response) => resolve(response));
+          setTimeout(() => resolve(null), 2500);
+        });
+        if (res?.ok) socketSucceeded = true;
+      } catch {
+        // proceed to REST fallback
+      }
+
+      if (!socketSucceeded) {
+        await deleteRoomApi(roomId);
+      }
+
+      removeSavedRoom(roomId);
+      toast.info('Room permanently deleted.');
+      navigate('/');
+    } catch (err) {
+      toast.error(err.message || 'Failed to delete room.');
+      throw err;
+    }
   }
 
   if (joinState === 'error') {

@@ -418,18 +418,24 @@ function initSocket(io) {
 
     socket.on('room:delete', async (_payload, ack) => {
       if (typeof ack !== 'function') ack = () => {};
-      const room = roomManager.getRoom(socket.data.roomId);
+      const targetRoomId = socket.data.roomId;
+      if (!targetRoomId) {
+        return ack({ ok: false, error: 'Not in a room.' });
+      }
+
+      const room = await roomManager.getOrLoadRoom(targetRoomId);
       if (!room) {
         return ack({ ok: false, error: 'Room not found.' });
       }
 
       const isCreator = !room.creatorUserId || room.creatorUserId === socket.data.userId;
-      if (!isCreator && !roomManager.isHost(room, socket.data.userId)) {
-        return ack({ ok: false, error: 'Only the Group Admin can permanently delete this room.' });
+      const isHost = roomManager.isHost(room, socket.data.userId);
+      if (!isCreator && !isHost) {
+        return ack({ ok: false, error: 'Only the Group Admin or Host can permanently delete this room.' });
       }
 
       const roomId = room.roomId;
-      io.to(roomId).emit('room:deleted', { message: 'The host has permanently deleted this room.' });
+      io.to(roomId).emit('room:deleted', { message: 'The room has been permanently deleted.' });
 
       const roomSockets = await io.in(roomId).fetchSockets();
       for (const s of roomSockets) {

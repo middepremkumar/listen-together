@@ -119,14 +119,14 @@ export default function RoomControls({
               </button>
             </>
           )}
-          {isGroupAdmin && (
+          {(isGroupAdmin || isHost) && (
             <button
               onClick={() => setShowDeleteModal(true)}
-              className="btn-secondary !px-3 !py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 border-red-900/50 hidden sm:inline-block"
-              title="Permanently delete room (Admin only)"
+              className="btn-secondary !px-2 sm:!px-3 !py-1.5 text-xs text-red-400 hover:text-red-300 hover:bg-red-500/10 border-red-900/50 flex items-center gap-1"
+              title="Permanently delete room"
             >
               <span>🗑️</span>
-              <span className="hidden lg:inline">Delete Room</span>
+              <span className="hidden sm:inline">Delete Room</span>
             </button>
           )}
           <button onClick={onLeave} className="btn-secondary !px-3 !py-1.5 text-xs text-gray-300 hover:text-white">
