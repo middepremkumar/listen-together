@@ -400,12 +400,12 @@ async function getOrLoadRoomByPassword(password) {
 // Host-triggered permanent deletion from both memory and MongoDB
 async function deleteRoomCompletely(roomId) {
   if (!roomId) return;
-  const upper = roomId.toUpperCase();
+  const upper = roomId.toUpperCase().trim();
   rooms.delete(upper);
 
   if (isDbConnected()) {
     try {
-      await Room.deleteOne({ roomId: upper });
+      await Room.deleteMany({ roomId: { $regex: new RegExp(`^${upper}$`, 'i') } });
       console.log(`[roomManager] Room ${upper} permanently deleted from MongoDB`);
     } catch (err) {
       console.error(`[roomManager] Failed to delete room ${upper}:`, err.message);

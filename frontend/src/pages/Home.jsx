@@ -148,14 +148,15 @@ export default function Home() {
 
   async function handleConfirmDelete() {
     if (!deleteTargetRoomId) return;
+    const target = deleteTargetRoomId;
     setDeleting(true);
     try {
-      await deleteRoomApi(deleteTargetRoomId);
-      removeSavedRoom(deleteTargetRoomId);
-      toast.info('Room permanently deleted from database.');
+      await deleteRoomApi(target);
+      removeSavedRoom(target);
       setDeleteTargetRoomId(null);
-      setCreatedRooms((prev) => prev.filter((r) => r.roomId !== deleteTargetRoomId));
-      setJoinedRooms((prev) => prev.filter((r) => r.roomId !== deleteTargetRoomId));
+      setCreatedRooms((prev) => prev.filter((r) => r.roomId !== target));
+      setJoinedRooms((prev) => prev.filter((r) => r.roomId !== target));
+      toast.info('Room permanently deleted from database.');
       await loadRooms();
     } catch (err) {
       toast.error(err.message || 'Failed to delete room.');
@@ -167,7 +168,8 @@ export default function Home() {
   function handleRemoveFromJoined(roomId) {
     removeSavedRoom(roomId);
     setJoinedRooms((prev) => prev.filter((r) => r.roomId !== roomId));
-    toast.info('Removed from your joined rooms list.');
+    setCreatedRooms((prev) => prev.filter((r) => r.roomId !== roomId));
+    toast.info('Removed from your rooms list.');
   }
 
   const allDisplayRooms = Array.from(
